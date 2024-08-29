@@ -1,0 +1,907 @@
+---
+title: "Command Line Code"
+author: "Emily Van Buren"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+# Fastp: 
+FastP: Data Pre-processing
+Each sample in the study is first put through a pre-processing step where adapters are trimmed and quality filtering is performed. This program used is called [FastP](https://github.com/OpenGene/fastp). This program was developed as an all-in-one pre-processing program for FastQ files with multi-threading support for high performance. The code in file fastp.sh is as follows: 
+
+The version used was 0.21.0. 
+```{linux, eval=FALSE}
+#!/bin/bash
+#SERVER=coraimmunity
+PATH=$PATH:/opt/storage/opt_programs/fastp
+for FILE in *_1.fq.gz; do
+        echo ${FILE}
+        SAMP=$(basename -s _1.fq.gz $FILE)
+        echo $SAMP
+nohup /opt/storage/opt_programs/fastp -i ${SAMP}_1.fq.gz -I ${SAMP}_2.fq.gz -o fastp/${SAMP}_fp_1.fq.gz -O fastp/${SAMP}_fp_2.fq.gz
+done
+```
+
+# De novo Transcritpome
+
+De novo transcriptomes were built using 2 different servers, HPC server at UTA and Frontera super computer from TACC. Transcriptome assembly was primarily run on Frontera and the rest of the steps were run on the HPC at UTA. Steps will denote which system was used. 
+
+## Step 1: De novo Transcriptome Assembly 
+
+### M.cavernosa
+
+Four WP samples (2 controls and 2 diseased) and four SCTLD samples (2 controls and 2 diseased) are randomly selected and their FastP adapter-trimmed and quality-filtered reads are used to generate a de novo reference transcriptome using [Trinity](https://github.com/trinityrnaseq/trinityrnaseq/wiki). This job was run on the Frontera supercomputer at the Texas Advanced Computing Center (TACC). 
+
+Samples used in assembly:
+UVI_083 (WP control)
+UVI_087 (WP control)
+M_c3    (SCTLD control)
+M_c7    (SCTLD control)
+UVI_082 (WP disease)
+UVI_084 (WP disease)
+M_d5    (SCTLD disease)
+M_d1    (SCTLD disease)
+
+The code in mcav_denovo_trinity.sh is as follows:
+```{linux, eval=FALSE}
+#!/bin/bash
+#SBATCH -J mcav_denovo_trinity            # job name
+#SBATCH -o mcav_denovo_trinity.o%j        # output and error file name (%j expands to jobID)
+#SBATCH -e mcav_denovo_trinity.e%j        # name of stderr error file.
+#SBATCH -N 1                                             # number of nodes requested
+#SBATCH -n 32                                            # total number of mpi tasks requested
+#SBATCH -p nvdimm                                        # queue (partition) -- normal, development, etc.
+#SBATCH -t 48:00:00                                      # run time (hh:mm:ss) - 48 hours
+#SBATCH -A DEB22003                                              # charge job to the specified project
+#SBATCH --mail-user=emily.buckley@uta.edu
+#SBATCH --mail-type=begin                                # email me when the job starts
+#SBATCH --mail-type=end                                  # email me when the job finishes
+
+module load tacc-singularity
+
+PATH=$PATH:/scratch1/07127/jatbee32/WP_experiment/mcav/trinity
+
+singularity exec -e /scratch1/07127/jatbee32/trinityrnaseq.v2.15.1.simg Trinity --normalize_reads --seqType fq --max_memory 200G --CPU 20 --SS_lib_type FR --left UVI_083_fp_1.fq.gz,UVI_087_fp_1.fq.gz,UVI_082_fp_1.fq.gz,UVI_084_fp_1.fq.gz,M_d5_1.fq.gz,M_d1_1.fq.gz,M_c3_1.fq.gz,M_c7_1.fq.gz --right UVI_083_fp_2.fq.gz,UVI_087_fp_2.fq.gz,UVI_082_fp_2.fq.gz,UVI_084_fp_2.fq.gz,M_d5_2.fq.gz,M_d1_2.fq.gz,M_c3_2.fq.gz,M_c7_2.fq.gz
+```
+
+### C.natans
+
+Four WP samples (2 controls and 2 diseased) and 4 SCTLD samples (2 controls and 2 diseased) are randomly selected and their FastP adapter-trimmed and quality-filtered reads are used to generate a de novo reference transcriptome using [Trinity](https://github.com/trinityrnaseq/trinityrnaseq/wiki). This job was run on the Frontera supercomputer at the Texas Advanced Computing Center (TACC). 
+
+Samples used in assembly:
+UVI_071 (WP control)
+UVI_076 (WP disease)
+UVI_080 (WPdisease - expose?)
+C_c4    (SCTLD control)
+C_c6    (SCLTD control)
+C_d3    (SCLTD disease)
+C_d8    (SCTLD disease)
+
+The code in cnat_denovo_trinity.sh is as follows:
+```{linux, eval=FALSE}
+#!/bin/bash
+#SBATCH -J cnat_denovo_trinity            # job name
+#SBATCH -o cnat_denovo_trinity.o%j        # output and error file name (%j expands to jobID)
+#SBATCH -e cnat_denovo_trinity.e%j        # name of stderr error file.
+#SBATCH -N 1                                             # number of nodes requested
+#SBATCH -n 32                                            # total number of mpi tasks requested
+#SBATCH -p nvdimm                                        # queue (partition) -- normal, development, etc.
+#SBATCH -t 48:00:00                                      # run time (hh:mm:ss) - 48 hours
+#SBATCH -A DEB22003                                              # charge job to the specified project
+#SBATCH --mail-user=emily.buckley@uta.edu
+#SBATCH --mail-type=begin                                # email me when the job starts
+#SBATCH --mail-type=end                                  # email me when the job finishes
+
+module load tacc-singularity
+
+PATH=$PATH:/scratch1/07127/jatbee32/WP_experiment/cnat/trinity
+
+singularity exec -e /scratch1/07127/jatbee32/trinityrnaseq.v2.15.1.simg Trinity --normalize_reads --seqType fq --CPU 20 --max_memory 200G --SS_lib_type FR --left UVI_71_fp_1.fq.gz,UVI_76_fp_1.fq.gz,UVI_80_fp_1.fq.gz,C_c4_1.fq.gz,C_c6_1.fq.gz,C_d3_1.fq.gz,C_d8_1.fq.gz --right UVI_71_fp_2.fq.gz,UVI_76_fp_2.fq.gz,UVI_80_fp_2.fq.gz,C_c4_2.fq.gz,C_c6_2.fq.gz,C_d3_2.fq.gz,C_d8_2.fq.gz
+```
+
+### O.favleolata 
+Four samples (2 controls and 2 diseased) are randomly selected and their FastP adapter-trimmed and quality-filtered reads are used to generate a de novo reference transcriptome using [Trinity](https://github.com/trinityrnaseq/trinityrnaseq/wiki). This job was run on the Frontera supercomputer at the Texas Advanced Computing Center (TACC). 
+
+Samples used in assembly:
+UVI_099 (control)
+UVI_103 (control)
+UVI_106 (disease)
+UVI_108 (disease)
+
+The code in ofav_denovo_trinity.sh is as follows:
+```{linux, eval=FALSE}
+#!/bin/bash
+#SBATCH -J ofav_denovo_trinity            # job name
+#SBATCH -o ofav_denovo_trinity.o%j        # output and error file name (%j expands to jobID)
+#SBATCH -e ofav_denovo_trinity.e%j        # name of stderr error file.
+#SBATCH -N 1                                             # number of nodes requested
+#SBATCH -n 32                                            # total number of mpi tasks requested
+#SBATCH -p nvdimm                                        # queue (partition) -- normal, development, etc.
+#SBATCH -t 48:00:00                                      # run time (hh:mm:ss) - 48 hours
+#SBATCH -A DEB22003                                              # charge job to the specified project
+#SBATCH --mail-user=emily.buckley@uta.edu
+#SBATCH --mail-type=begin                                # email me when the job starts
+#SBATCH --mail-type=end                                  # email me when the job finishes
+
+module load tacc-singularity
+
+PATH=$PATH:/scratch1/07127/jatbee32/WP_experiment/ofav/trinity
+
+singularity exec -e /scratch1/07127/jatbee32/trinityrnaseq.v2.15.1.simg Trinity --normalize_reads --seqType fq --CPU 20 --max_memory 200G --SS_lib_type FR --left UVI_099_fp_1.fq.gz,UVI_103_fp_1.fq.gz,UVI_106_fp_1.fq.gz,UVI_108_fp_1.fq.gz --right UVI_099_fp_2.fq.gz,UVI_103_fp_2.fq.gz,UVI_106_fp_2.fq.gz,UVI_108_fp_2.fq.gz
+```
+
+### S.siderastrea
+
+Six samples (3 controls and 3 diseased) are randomly selected and their FastP adapter-trimmed and quality-filtered reads are used to generate a de novo reference transcriptome using [Trinity](https://github.com/trinityrnaseq/trinityrnaseq/wiki). This job was run on the Frontera supercomputer at the Texas Advanced Computing Center (TACC). 
+
+Samples used in assembly:
+
+UVI_131 (control)
+UVI_134 (exposed)
+UVI_136 (diseased)
+
+
+The code in ssid_denovo_trinity.sh is as follows:
+```{linux, eval=FALSE}
+#!/bin/bash
+#SBATCH -J ssid_denovo_trinity            # job name
+#SBATCH -o ssid_denovo_trinity.o%j        # output and error file name (%j expands to jobID)
+#SBATCH -e ssid_denovo_trinity.e%j        # name of stderr error file. 
+#SBATCH -N 1                       			 # number of nodes requested
+#SBATCH -n 32                      			 # total number of mpi tasks requested
+#SBATCH -p nvdimm                  			 # queue (partition) -- normal, development, etc.
+#SBATCH -t 48:00:00                			 # run time (hh:mm:ss) - 48 hours
+#SBATCH -A DEB22003    						 # charge job to the specified project 
+#SBATCH --mail-user=kelsey.beavers@uta.edu
+#SBATCH --mail-type=begin   				 # email me when the job starts
+#SBATCH --mail-type=end     				 # email me when the job finishes
+
+module load tacc-singularity
+
+PATH=$PATH:/scratch1/06825/tg861249
+
+singularity exec -e /scratch1/06825/tg861249/trinityrnaseq.v2.15.1.simg Trinity --normalize_reads --seqType fq --grid_node_CPU 2 --max_memory 200G --SS_lib_type FR --left UVI_131_fp_1.fq.gz,UVI_134_fp_1.fq.gz,UVI_136_fp_1.fq.gz, --right UVI_131_fp_2.fq.gz,UVI_134_fp_2.fq.gz,UVI_136_fp_2.fq.gz
+```
+
+### O. annularis
+
+All samples from both studies were selected and their FastP adapter-trimmed and quality-filtered reads were used to generate a de novo reference transcriptome using [Trinity](https://github.com/trinityrnaseq/trinityrnaseq/wiki). This job was run on the HPC at University of Texas at Arlington. 
+
+Samples used in assembly:
+
+Past_c1 (SCTLD Control)
+Past_c5 (SCTLD Control)
+Past_c6 (SCTLD Control)
+Past_c7 (SCTLD Control)
+Past_d1 (SCTLD Disease)
+Past_d2 (SCTLD Disease)
+Past_d3 (SCTLD Disease)
+Past_d4 (SCTLD Disease)
+Past_d5 (SCTLD Disease)
+Past_d6 (SCTLD Disease)
+Past_d7 (SCTLD Disease)
+
+USVI_109 (WP Control)
+USVI_110 (WP Exposed)
+USVI_111 (WP Control)
+USVI_112 (WP Exposed)
+USVI_117 (WP Control)
+USVI_118 (WP Disease)
+
+The code in past_denovo_trinity.sh is as follows:
+
+```{linux, eval=FALSE}
+#!/bin/bash
+#SBATCH -J oann_denovo_trinity            # job name
+#SBATCH -o oann_denovo_trinity.o%j        # output and error file name (%j expands to jobID)
+#SBATCH -e oann_denovo_trinity.e%j        # name of stderr error file.
+#SBATCH -N 1                                             # number of nodes requested
+#SBATCH -n 32                                            # total number of mpi tasks requested
+#SBATCH -p long                                        # queue (partition) -- normal, development, etc.
+#SBATCH -t 8-00:00:00                                      # run time (dd-hh:mm:ss) - 8 days
+#SBATCH --mail-user=emily.buckley@uta.edu
+#SBATCH --mail-type=begin                                # email me when the job starts
+#SBATCH --mail-type=end                                  # email me when the job finishes
+
+PATH=$PATH:/home/ewb8793/trinityrnaseq.v2.15.1.simg
+PATH=$PATH:
+DIR=/home/ewb8793/coral_classification/oann/fastp
+
+module load singularity
+
+# move to bulk directory
+
+cd /bulk/ewb8793/trinity/oann
+
+singularity exec -e /home/ewb8793/trinityrnaseq.v2.15.1.simg Trinity --normalize_reads --seqType fq --CPU 32 --max_memory 200G --SS_lib_type FR --left $DIR/UVI_097_fp_1.fq.gz,$DIR/UVI_093_fp_1.fq.gz,$DIR/O_c2_fp_1.fq.gz,$DIR/O_c3_fp_1.fq.gz,$DIR/UVI_096_fp_1.fq.gz,$DIR/UVI_092_fp_1.fq.gz,$DIR/O_d6_fp_1.fq.gz,$DIR/O_d1_fp_1.fq.gz --right $DIR/UVI_097_fp_2.fq.gz,$DIR/UVI_093_fp_2.fq.gz,$DIR/O_c2_fp_2.fq.gz,$DIR/O_c3_fp_2.fq.gz,$DIR/UVI_096_fp_2.fq.gz,$DIR/UVI_092_fp_2.fq.gz,$DIR/O_d6_fp_2.fq.gz,$DIR/O_d1_fp_2.fq.gz
+
+
+```
+
+## Step 2: Obtain coral-only transcripts
+In this job, trinty outputs will be moved into a new directory to start with the obtaining of a coral only transcriptome. 
+
+Coral-only transcripts are extracted from the de novo metatranscriptome following the protocol outlined by Dimos et al. (2022). 
+
+### Create One Master Coral Transcriptome 
+
+Gene model and de novo transcritpomes were reformatted and merged together to create one master coral transcritpome. A list of the species and their DOIs are listed below: 
+
+| Species | DOI |
+| ----------- | ----------- | 
+| *Acropora millepora* | 10.1126/science.aba4674 |
+| *Actinia equina* | 10.1016/j.margen.2020.100753 |
+| *Astrangia poculata* | 10.1101/2023.09.22.558704 |
+| *Dendronephthya gigantea* | 10.1093/gbe/evz043 |
+| *Exaiptasia diaphana* | 10.1073/pnas.1513318112 |
+| *Goniastrea aspera* | 10.1186/s13059-018-1552-8 |
+| *Montipora capitata* | 10.1093/gigascience/giac098 |
+| *Nematostella vectensis* | 10.1101/2020.10.30.359448 |
+| *Orbicella faveolata* | 10.1016/j.cub.2016.09.039 |
+| *Orbicella annularis* | 10.1038/s41467-023-38612-4 |
+| *Pachyseris speciosa* | 10.1016/j.cub.2021.03.028 |
+| *Plesiastrea versipora* | 10.1016/j.ympev.2019.01.012 |
+| *Pocillopora acuta* | 10.1093/gbe/evad149 |
+| *Porites astreoides* | 10.46471/gigabyte.65 |
+| *Pseudodiploria strigosa* | 10.1038/s41467-023-38612-4 |
+| *Siderastrea siderea* | 10.1111/mec.16414 |
+| *Stylophora pistillata* | 10.1038/s41598-017-17484-x |
+| *Xenia sp.* | 10.1038/s41586-020-2385-7 |
+
+```{linux, eval=FALSE}
+# reformat contig names 
+
+# Amil gene model 
+awk '/^>/{print ">amils_gene." ++i; next}{print}' amil_genemodel.fasta > Amil_genemodel.fasta
+
+# Exaiptasia gene model 
+awk '/^>/{print ">aipt_gene." ++i; next}{print}' exaiptasia_genemodel.fasta > Exaiptasia_genemodel.fasta
+
+# Past gene model 
+awk '/^>/{print ">past_gene." ++i; next}{print}' Pastreoides_transcripts_v1.fasta > Past_genemodel.fasta
+
+# Pspe gene model 
+awk '/^>/{print ">pspe_gene." ++i; next}{print}' pspe_0.12.maker_post_002.transcripts.fasta > Pspe_genemodel.fasta
+
+# Pocillopora acuta gene model 
+/home/ewb8793/anaconda3/bin/java -ea -Xmx10g -cp /home/ewb8793/bbmap/current/ jgi.ReformatReads in=/home/ewb8793/coral_classification/transcriptomes/MasterCoral_genemodels/Pocillopora_acuta_HIv2.genes.cds.fna out=/home/ewb8793/coral_classification/transcriptomes/MasterCoral_genemodels/Pocillopora_acuta_genemodel_v1.fasta fixjunk 
+
+rm Pocillopora_acuta_HIv2.genes.cds.fna
+
+awk '/^>/{print ">Pocacu_gene." ++i; next}{print}' Pocillopora_acuta_genemodel_v1.fasta   > Pocillopora_acuta_genemodel.fasta 
+
+# Apoculata gene model 
+awk '/^>/{print ">Apoculata_gene." ++i; next}{print}' apoculata_longest_trans_cds_formatted.fasta > Apoculata_genemodel.fasta
+
+# Nematostella gene model 
+/home/ewb8793/anaconda3/bin/java -ea -Xmx10g -cp /home/ewb8793/bbmap/current/ jgi.ReformatReads in=/home/ewb8793/coral_classification/transcriptomes/MasterCoral_genemodels/NVEC_genemodel.fna out=/home/ewb8793/coral_classification/transcriptomes/MasterCoral_genemodels/NVEC_genemodel.fasta fixjunk 
+
+awk '/^>/{print ">Ncev_gene." ++i; next}{print}' NVEC_genemodel.fasta > Nvec_genemodel.fasta
+
+rm NVEC_genemodel.fasta NVEC_genemodel.fna
+
+# Ssid Brad transcriptome
+awk '/^>/{print ">Ssid_gene." ++i; next}{print}' Ssid_revision_transcriptome.fa > Ssid_bradmodel.fasta
+
+# Ofav gene model 
+awk '/^>/{print ">Ofav_gene." ++i; next}{print}' ofav_genemodel.fasta   > Ofav_genemodel.fasta
+
+# Aequina gene model 
+/home/ewb8793/anaconda3/bin/java -ea -Xmx10g -cp /home/ewb8793/bbmap/current/ jgi.ReformatReads in=/home/ewb8793/coral_classification/transcriptomes/MasterCoral_genemodels/equina_smart.rnam-trna.merged.ggf.curated.remredun.nucl.fa out=/home/ewb8793/coral_classification/transcriptomes/MasterCoral_genemodels/equina_smart_genemodel_v1.fasta fixjunk
+
+awk '/^>/{print ">Aequina." ++i; next}{print}' equina_smart_genemodel_v1.fasta   > equina_smart_genemodel.fasta
+
+rm equina_smart_genemodel_v1.fasta equina_smart.rnam-trna.merged.ggf.curated.remredun.nucl.fa
+
+# Gasp gene model 
+/home/ewb8793/anaconda3/bin/java -ea -Xmx10g -cp /home/ewb8793/bbmap/current/ jgi.ReformatReads in=/home/ewb8793/coral_classification/transcriptomes/MasterCoral_genemodels/gasp_1.0.transcripts.fasta.gz out=/home/ewb8793/coral_classification/transcriptomes/MasterCoral_genemodels/gasp_1.0.transcripts.fasta fixjunk
+
+awk '/^>/{print ">gasp." ++i; next}{print}' gasp_1.0.transcripts.fasta > gasp_genemodel.fasta
+
+rm gasp_1.0.transcripts.fasta.gz gasp_1.0.transcripts.fasta
+
+# Montipora capitata gene model 
+/home/ewb8793/anaconda3/bin/java -ea -Xmx10g -cp /home/ewb8793/bbmap/current/ jgi.ReformatReads in=/home/ewb8793/coral_classification/transcriptomes/MasterCoral_genemodels/Montipora_capitata_HIv3.genes.cds.fna.gz out=/home/ewb8793/coral_classification/transcriptomes/MasterCoral_genemodels/Montipora_capitata_HIv3.genes.cds.fasta fixjunk
+
+awk '/^>/{print ">Mcap." ++i; next}{print}' Montipora_capitata_HIv3.genes.cds.fasta  > Montipora_capitata_genemodel.fasta
+
+rm Montipora_capitata_HIv3.genes.cds.fasta Montipora_capitata_HIv3.genes.cds.fna.gz 
+
+# Spis gene model 
+/home/ewb8793/anaconda3/bin/java -ea -Xmx10g -cp /home/ewb8793/bbmap/current/ jgi.ReformatReads in=/home/ewb8793/coral_classification/transcriptomes/MasterCoral_genemodels/Spis.genome.annotation.CDS.longest.fa.gz out=/home/ewb8793/coral_classification/transcriptomes/MasterCoral_genemodels/Spis.genome.annotation.CDS.longest.fasta fixjunk
+
+awk '/^>/{print ">Spis." ++i; next}{print}' Spis.genome.annotation.CDS.longest.fasta  > Spis_genemodel.fasta
+
+rm Spis.genome.annotation.CDS.longest.fa.gz Spis.genome.annotation.CDS.longest.fasta 
+
+# Xenia gene model 
+awk '/^>/{print ">Xenia." ++i; next}{print}' xenia_transcripts.fasta  > xenia_genemodel.fasta
+
+rm xenia_transcripts.fasta
+
+# D_gigantea gene model 
+awk '/^>/{print ">Dgigantea." ++i; next}{print}' D_gigantea_transcripts.fasta  > D_gigantea_genemodel.fasta
+
+rm D_gigantea_transcripts.fasta
+
+#Plesiastrea_versipora 
+Plesiastrea_versipora_transcriptome_REL.fa
+awk '/^>/{print ">Plesiastrea.versipora." ++i; next}{print}' Plesiastrea_versipora_transcriptome_REL.fa  > PPlesiastrea_versipora_transcriptome.fasta
+rm Plesiastrea_versipora_transcriptome_REL.fa
+
+# Pstr Kelsey transcriptome
+awk '/^>/{print ">Pstr_gene." ++i; next}{print}' Pstr_reference_transcriptome.fa > Pstr_kelseymodel.fasta
+
+# Oann Kelsey genome_guidedtranscriptome
+awk '/^>/{print ">Oann_gene." ++i; next}{print}' Oann_reference_transcriptome.fa > Oann_kelseymodel.fasta
+rm Oann_reference_transcriptome.fa
+```
+
+A Master Coral database is created using [BLAST](https://www.ncbi.nlm.nih.gov/books/NBK279690/toc/?report=reader):
+
+```{bash, eval=FALSE}
+#!/bin/bash
+#SBATCH -J bbsplit                                                              # job name
+#SBATCH -o bbsplit.o%j                                                          # output and error file name (%j expands to jobID)
+#SBATCH -e bbsplit.e%j                                                          # name of stderr error file.
+#SBATCH -N 1                                                            # number of nodes requested
+#SBATCH -n 6                                            # total number of mpi tasks requested
+#SBATCH -p short                                        # queue (partition) -- normal, development, etc.
+#SBATCH -t 48:00:00                                     # run time (hh:mm:ss) - 48 hours
+#SBATCH --mail-user=emily.buckley@uta.edu
+#SBATCH --mail-type=begin                               # email me when the job starts
+#SBATCH --mail-type=end                                 # email me when the job finishes
+
+PATH=$PATH:/home/ewb8793/ncbi-blast-2.14.1+/bin/
+DIR=/home/ewb8793/coral_classification/transcriptomes/MasterCoral_proteomes
+
+# concatinate the files together 
+
+cat Amil_genemodel.fasta gasp_genemodel.fasta Past_genemodel.fasta Spis_genemodel.fasta Apoculata_genemodel.fasta Pocillopora_acuta_genemodel.fasta Ssid_bradmodel.fasta D_gigantea_genemodel.fasta Montipora_capitata_genemodel.fasta PPlesiastrea_versipora_transcriptome.fasta xenia_genemodel.fasta equina_smart_genemodel.fasta Nvec_genemodel.fasta Pspe_genemodel.fasta Exaiptasia_genemodel.fasta Ofav_genemodel.fasta Pstr_kelseymodel.fasta > mastercoral_final.fasta
+
+PATH=$PATH:/home/ewb8793/ncbi-blast-2.14.1+/bin/
+
+
+/home/ewb8793/ncbi-blast-2.14.1+/bin/makeblastdb -in /home/ewb8793/coral_classification/transcriptomes/MasterCoral_genemodels/mastercoral_final.fasta -parse_seqids -dbtype nucl -out MasterCoral_db
+```
+
+### Extraction of Coral Only Transcripts
+ The longest isoform sequence is obtained using the script in [Trinity](https://github.com/trinityrnaseq/trinityrnaseq/wiki). The assembly is BLASTed against the Master Coral database. Finally reads with less than 95% percent identity and shorter than 150 bp long are filtered out. Some species required a more lenient identity percentage (90%), as noted in the methods of the corresponding paper. 
+
+The script is as follows: coral_only_transcripts.sh
+
+```{bash, eval=FALSE}
+#!/bin/bash
+#SBATCH -J coral_only_trancripts            # job name
+#SBATCH -o coral_only_trancripts.o%j        # output and error file name (%j expands to jobID)
+#SBATCH -e coral_only_trancripts.e%j        # name of stderr error file.
+#SBATCH -N 1                                             # number of nodes requested
+#SBATCH -n 6                                            # total number of mpi tasks requested
+#SBATCH -p short                                        # queue (partition) -- normal, development, etc.
+#SBATCH -t 24:00:00                                      # run time (hh:mm:ss) - 24 hours
+#SBATCH --mail-user=emily.buckley@uta.edu
+#SBATCH --mail-type=begin                                # email me when the job starts
+#SBATCH --mail-type=end                                  # email me when the job finishes
+
+PATH=$PATH:/home/ewb8793/trinityrnaseq-v2.15.1/util/misc/
+PATH=$PATH:/home/ewb8793/ncbi-blast-2.14.1+/bin/
+DIR=/home/ewb8793/coral_classification/transcriptomes/cnat 
+#move trinity outputs to transcriptome directory 
+
+#cd /home/ewb8793
+
+#mv trinity_out_dir* /home/ewb8793/coral_classification/transcriptomes/past 
+
+PATH=$PATH:/home/ewb8793/trinityrnaseq-v2.15.1/util/misc/
+PATH=$PATH:/home/ewb8793/ncbi-blast-2.14.1+/bin/
+PATH=$PATH:/home/ewb8793/cdbfasta-master
+PATH=$PATH:/home/ewb8793/anaconda3/opt/transdecoder
+DIR=/home/ewb8793/coral_classification/transcriptomes/cnat  
+
+# obtain longest isoforms 
+
+/home/ewb8793/trinityrnaseq-v2.15.1/util/misc/get_longest_isoform_seq_per_trinity_gene.pl trinity_out_dir.Trinity.fasta > cnat_longest_isoform.fasta
+
+grep ">" cnat_longest_isoform.fasta | wc -l
+
+# blast longest isoforms against MasterCoral Database
+
+/home/ewb8793/ncbi-blast-2.14.1+/bin/blastn -query cnat_longest_isoform.fasta -db /home/ewb8793/coral_classification/transcriptomes/MasterCoral_genemodels/MasterCoral_db -outfmt "6 qseqid evalue pident length" -max_target_seqs 1 -out cnat_coral_only_sequences.txt
+
+grep ">" cnat_coral_only_sequences.txt | wc -l
+
+# filter reads with less than 95% identity & shorter than 150 bp 
+
+awk '{if ($3 > 95) print $1,$2,$4 }' cnat_coral_only_sequences.txt > contigs_percent_95.txt
+
+grep ">" contigs_percent_95.txt | wc -l
+
+awk '{if ($3 > 150) print $1}' contigs_percent_95.txt > contigs_percent_95_bp_150.txt
+
+grep ">" contigs_percent_95_bp_150.txt | wc -l
+
+# filter reads with less than 90% identity & shorter than 150 bp 
+
+awk '{if ($3 > 90) print $1,$2,$4 }' cnat_coral_only_sequences.txt > contigs_percent_90.txt
+
+grep ">" contigs_percent_90.txt | wc -l
+
+awk '{if ($3 > 150) print $1}' contigs_percent_90.txt > contigs_percent_90_bp_150.txt
+
+grep ">" contigs_percent_90_bp_150.txt | wc -l
+```
+
+## Step 3 & 4: Extract coral-only transcripts from assembly & Make an alignable transcriptome
+
+### Example Script
+An index of the metatranscriptome assembly is created with [cdbfasta](https://github.com/gpertea/cdbfasta). Coral-only contigs (contigs_percent_95_bp_150.txt) are matched to the metatranscriptome index. Extract the longest open reading frame from each contig and then generate its predicted peptide sequence using [TransDecoder](https://github.com/TransDecoder/TransDecoder/wiki). Similar sequences are removed with [cd-hit](https://sites.google.com/view/cd-hit)
+
+extract_and_align.sh
+```{bash, eval=FALSE}
+#!/bin/bash
+#SBATCH -J extract_and_align            # job name
+#SBATCH -o extract_and_align.o%j        # output and error file name (%j expands to jobID)
+#SBATCH -e extract_and_align.e%j        # name of stderr error file.
+#SBATCH -N 1                                             # number of nodes requested
+#SBATCH -n 6                                            # total number of mpi tasks requested
+#SBATCH -p short                                        # queue (partition) -- normal, development, etc.
+#SBATCH -t 24:00:00                                      # run time (hh:mm:ss) - 24 hours
+#SBATCH --mail-user=emily.buckley@uta.edu
+#SBATCH --mail-type=begin                                # email me when the job starts
+#SBATCH --mail-type=end                                  # email me when the job finishes
+
+# estbalish directory 
+PATH=$PATH:/home/ewb8793/trinityrnaseq-v2.15.1/util/misc/
+PATH=$PATH:/home/ewb8793/ncbi-blast-2.14.1+/bin/
+PATH=$PATH:/home/ewb8793/cdbfasta-master
+PATH=$PATH:/home/ewb8793/anaconda3/opt/transdecoder
+DIR=/home/ewb8793/coral_classification/transcriptomes/cnat  
+
+# index metatranscriptome assembly with cdbfasta
+
+/home/ewb8793/cdbfasta-master/cdbfasta trinity_out_dir.Trinity.fasta
+
+# match to coral-only contigs to metatranscriptome index 
+
+cat contigs_percent_95_bp_150.txt | /home/ewb8793/cdbfasta-master/cdbyank trinity_out_dir.Trinity.fasta.cidx > cnat_coral_only_transcriptome_95.fasta
+cat contigs_percent_90_bp_150.txt | /home/ewb8793/cdbfasta-master/cdbyank trinity_out_dir.Trinity.fasta.cidx > cnat_coral_only_transcriptome_90.fasta
+
+# Extract the longest open reading frame from each contig and then generate its predicted peptide sequence using TransDecoder
+
+/home/ewb8793/miniconda3/bin/TransDecoder.LongOrfs -t cnat_coral_only_transcriptome_95.fasta
+/home/ewb8793/miniconda3/bin/TransDecoder.LongOrfs -t cnat_coral_only_transcriptome_90.fasta
+
+/home/ewb8793/miniconda3/bin/TransDecoder.Predict -t cnat_coral_only_transcriptome_95.fasta
+/home/ewb8793/miniconda3/bin/TransDecoder.Predict -t cnat_coral_only_transcriptome_90.fasta
+
+# Rename the resulting .pep file to end in .fa
+cp cnat_coral_only_transcriptome_95.fasta.transdecoder.pep cnat_coral_only_transcriptome_95.fasta.transdecoder.fa
+cp cnat_coral_only_transcriptome_90.fasta.transdecoder.pep cnat_coral_only_transcriptome_90.fasta.transdecoder.fa
+
+# Similar sequences are removed with cd-hit 
+/home/ewb8793/miniconda3/bin/cd-hit -i cnat_coral_only_transcriptome_95.fasta.transdecoder.fa -o cnat_reference_proteome_95.fa
+/home/ewb8793/miniconda3/bin/cd-hit -i cnat_coral_only_transcriptome_90.fasta.transdecoder.fa -o cnat_reference_proteome_90.fa
+
+grep ">" cnat_reference_proteome_95.fa | wc -l
+grep ">" cnat_reference_proteome_90.fa | wc -l
+
+# make align-able transcriptome 
+
+grep ">" cnat_reference_proteome_95.fa > cnat_proteome_names_95.txt
+sed 's/.p/\t/' cnat_proteome_names_95.txt > proteome_names_format_95.txt
+awk '{print $1}'  proteome_names_format_95.txt > contigs_to_extract_95.txt
+sed 's/^.//g' contigs_to_extract_95.txt > contigs_list_95.txt
+
+cat contigs_list_95.txt | /home/ewb8793/cdbfasta-master/cdbyank trinity_out_dir.Trinity.fasta.cidx > final_cnat_reference_transcriptome_95.fa
+
+grep ">" final_cnat_reference_transcriptome_95.fa | wc -l
+
+grep ">" cnat_reference_proteome_90.fa > cnat_proteome_names_90.txt
+sed 's/.p/\t/' cnat_proteome_names_90.txt > proteome_names_format_90.txt
+awk '{print $1}'  proteome_names_format_90.txt > contigs_to_extract_90.txt
+sed 's/^.//g' contigs_to_extract_90.txt > contigs_list_90.txt
+
+cat contigs_list_90.txt | /home/ewb8793/cdbfasta-master/cdbyank trinity_out_dir.Trinity.fasta.cidx > final_cnat_reference_transcriptome_90.fa
+
+grep ">" final_cnat_reference_transcriptome_90.fa | wc -l
+```
+
+## Step 5, 6, and7: BUSCO, Annotate and Assembly Stats
+Assess the quality of the new transcriptome with BUSCO. Annotate with master coral database. And assess the assembly stats with a BBMap tool. 
+
+### Create Uniprot Database
+Download the latest [UniProt](https://www.uniprot.org/help/downloads) release (Reviewed).
+```{bash, eval=FALSE}
+# Downloaded on June 28th 2023 
+wget https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz
+gunzip uniprot_sprot.fasta.gz
+```
+
+Create the BLAST database out of this Uniprot download:
+```{bash, eval=FALSE}
+DIR=/home/ewb8793/coral_classification/transcriptomes/uniprotdb
+/home/ewb8793/ncbi-blast-2.14.1+/bin/makeblastdb -in uniprot_sprot.fasta -parse_seqids -dbtype prot -out uniprot_db 
+```
+
+### Example Script
+```{linux, eval=FALSE}
+#!/bin/bash
+#SBATCH -J annotate_stats            # job name
+#SBATCH -o annotate_stats.o%j        # output and error file name (%j expands to jobID)
+#SBATCH -e annotate_stats.e%j        # name of stderr error file.
+#SBATCH -N 1                                             # number of nodes requested
+#SBATCH -n 26                                            # total number of mpi tasks requested
+#SBATCH -p normal                                        # queue (partition) -- normal, development, etc.
+#SBATCH -t 3-00:00:00                                      # run time (hh:mm:ss) - 48 hours
+#SBATCH --mail-user=emily.buckley@uta.edu
+#SBATCH --mail-type=begin                                # email me when the job starts
+#SBATCH --mail-type=end                                  # email me when the job finishes
+
+module load singularity 
+
+# BUSCO Score 
+singularity exec docker://ezlabgva/busco:v5.5.0_cv1 busco -i final_mcav_reference_transcriptome_90.fa -o final_mcav90_reference_transcriptome_busco_results -l metazoa_odb10 -m tran -f -c 10
+
+# Annotate Transcriptome 
+/home/ewb8793/ncbi-blast-2.14.1+/bin/blastx -query final_ppor_reference_transcriptome.fa -db /home/ewb8793/coral_classification/transcriptomes/uniprotdb/uniprot_db -outfmt "6 sseqid qseqid evalue" -max_target_seqs 1 -num_threads 15 -out annotated_final_ppor_reference_transcriptome.txt
+
+# Assembly Stats 
+
+#/home/ewb8793/anaconda3/bin/java -cp /home/ewb8793/bbmap/current/ jgi.AssemblyStats2 in=final_cnat_reference_transcriptome_95.fa > Assembly_stats_95.txt
+#/home/ewb8793/anaconda3/bin/java -cp /home/ewb8793/bbmap/current/ jgi.AssemblyStats2 in=final_cnat_reference_transcriptome_90.fa > Assembly_stats_90.txt
+```
+
+### Annotations for Previously Published Transcriptomes
+
+```{linux, eval=FALSE}
+#!/bin/bash
+#SBATCH -J annotate_stats            # job name
+#SBATCH -o annotate_stats.o%j        # output and error file name (%j expands to jobID)
+#SBATCH -e annotate_stats.e%j        # name of stderr error file.
+#SBATCH -N 1                                             # number of nodes requested
+#SBATCH -n 26                                            # total number of mpi tasks requested
+#SBATCH -p normal                                        # queue (partition) -- normal, development, etc.
+#SBATCH -t 3-00:00:00                                      # run time (hh:mm:ss) - 48 hours
+#SBATCH --mail-user=emily.buckley@uta.edu
+#SBATCH --mail-type=begin                                # email me when the job starts
+#SBATCH --mail-type=end                                  # email me when the job finishes
+
+PATH=$PATH:/home/ewb8793/ncbi-blast-2.14.1+/bin/
+
+# Past Putnam
+/home/ewb8793/ncbi-blast-2.14.1+/bin/blastx -query ../Past_genome_putnam.fa -db /home/ewb8793/coral_classification/transcriptomes/uniprotdb/uniprot_db -outfmt "6 sseqid qseqid evalue" -max_target_seqs 1 -num_threads 15 -out annotated_past_gene_model.txt
+
+
+# Pstr
+/home/ewb8793/ncbi-blast-2.14.1+/bin/blastx -query ../Pstr_reference_transcriptome.fa -db /home/ewb8793/coral_classification/transcriptomes/uniprotdb/uniprot_db -outfmt "6 sseqid qseqid evalue" -max_target_seqs 1 -num_threads 15 -out annotated_pstr_ref_transcriptome.txt
+
+# A
+/home/ewb8793/ncbi-blast-2.14.1+/bin/blastx -query ../SymbA_transcriptome.fa -db /home/ewb8793/coral_classification/transcriptomes/uniprotdb/uniprot_db -outfmt "6 sseqid qseqid evalue" -max_target_seqs 1 -num_threads 15 -out annotated_symbA_ref_transcriptome.txt
+
+# B
+/home/ewb8793/ncbi-blast-2.14.1+/bin/blastx -query ../SymbB_transcriptome.fa -db /home/ewb8793/coral_classification/transcriptomes/uniprotdb/uniprot_db -outfmt "6 sseqid qseqid evalue" -max_target_seqs 1 -num_threads 15 -out annotated_symbB_ref_transcriptome.txt
+
+# C
+/home/ewb8793/ncbi-blast-2.14.1+/bin/blastx -query ../SymbC_transcriptome.fa -db /home/ewb8793/coral_classification/transcriptomes/uniprotdb/uniprot_db -outfmt "6 sseqid qseqid evalue" -max_target_seqs 1 -num_threads 15 -out annotated_symbC_ref_transcriptome.txt
+
+# D
+/home/ewb8793/ncbi-blast-2.14.1+/bin/blastx -query ../SymbD_transcriptome.fa -db /home/ewb8793/coral_classification/transcriptomes/uniprotdb/uniprot_db -outfmt "6 sseqid qseqid evalue" -max_target_seqs 1 -num_threads 15 -out annotated_symbD_ref_transcriptome.txt
+```
+
+# BBSplit: Sort coral and Symbiodiniaceae reads
+Our eukaryotic reads contain sequences that originate from both the coral host species as well as their intracellular Symbiodiniaceae. There are four predominant Symbiodiniaceae genera that form symbioses with the corals in our study, so we will use [BBMap](https://jgi.doe.gov/data-and-tools/bbtools/bb-tools-user-guide/bbmap-guide/) to map reads to the coral host transcriptome, as well as Symbiodinium, Breviolum, Cladocopium, and Durusdinium transcriptomes, prior to read quantification. BBMap is splice-aware global aligner for DNA and RNA sequencing reads, and BBsplit uses BBMap to map reads to multiple transcriptomes at once and determines which transcriptome each reads matches to best. 
+
+This will create one output for each file. The text file for ref stats can be downloaded and placed into BBSplit Statistics output file for all species. It will be used at bottom for Summary of Genus Averages. 
+
+From here, each file will need to be reformatted with BBMap program to split back into two separate fastq files for forward and reverse reads.
+
+Usage is as follows: 
+
+```{linux, eval=FALSE}
+#!/bin/bash
+#SBATCH -J bbsplit            							# job name
+#SBATCH -o bbsplit.o%j        							# output and error file name (%j expands to jobID)
+#SBATCH -e bbsplit.e%j        							# name of stderr error file.
+#SBATCH -N 1                             				# number of nodes requested
+#SBATCH -n 6                                            # total number of mpi tasks requested
+#SBATCH -p short                                        # queue (partition) -- normal, development, etc.
+#SBATCH -t 48:00:00                                     # run time (hh:mm:ss) - 48 hours
+#SBATCH --mail-user=emily.buckley@uta.edu
+#SBATCH --mail-type=begin                               # email me when the job starts
+#SBATCH --mail-type=end                                 # email me when the job finishes
+
+PATH=$PATH:/home/ewb8793/bbmap/
+PATH=$PATH:/home/ewb8793/anaconda3/bin/java
+DIR=/home/ewb8793/coral_classification/transcriptomes/final_transcriptomes
+
+cd /home/ewb8793/coral_classification/past/bbsplit
+
+# BBSplit for known transcriptomes 
+for FILE in *_fp_1.fq.gz; do
+        echo ${FILE}
+        SAMP=$(basename -s _fp_1.fq.gz $FILE)
+        echo $SAMP
+    
+/home/ewb8793/anaconda3/bin/java -ea -Xmx10g -cp /home/ewb8793/bbmap/current/ align2.BBSplitter in1=${SAMP}_fp_1.fq.gz in2=${SAMP}_fp_2.fq.gz ref=${DIR}/Past_genome_putnam.fa,${DIR}/SymbA_transcriptome.fa,${DIR}/SymbB_transcriptome.fa,${DIR}/SymbC_transcriptome.fa,${DIR}/SymbD_transcriptome.fa basename=${SAMP}_%.fq.gz refstats=${SAMP}_stats.txt outu1=${SAMP}_bboutu_1.fq.gz outu2=${SAMP}_bboutu_2.fq.gz
+done 
+
+
+# reformat output fastq files host
+for FILE in *_coral_reference_transcriptome.fq.gz; do
+        echo ${FILE}
+        SAMP=$(basename -s .fq.gz $FILE)
+        echo $SAMP
+/home/ewb8793/anaconda3/bin/java -ea -Xmx10g  -cp  /home/ewb8793/bbmap/current/ jgi.ReformatReads in=${SAMP}_coral_reference_transcriptome.fq out1=${SAMP}_host_1.fq out2=${SAMP}_host_2.fq
+done
+
+# reformat output fastq files SymbA
+for FILE in *SymbA_transcriptome.fq.gz; do
+        echo ${FILE}
+        SAMP=$(basename -s _SymbA_transcriptome.fq.gz $FILE)
+        echo $SAMP
+/home/ewb8793/anaconda3/bin/java -ea -Xmx10g  -cp  /home/ewb8793/bbmap/current/ jgi.ReformatReads in=${SAMP}_SymbA_transcriptome.fq out1=${SAMP}_A_1.fq out2=${SAMP}_A_2.fq
+done
+
+# reformat output fastq files SymbB
+for FILE in *_SymbB_transcriptome.fq.gz; do
+        echo ${FILE}
+        SAMP=$(basename -s _SymbB_transcriptome.fq.gz $FILE)
+        echo $SAMP
+/home/ewb8793/anaconda3/bin/java -ea -Xmx10g  -cp  /home/ewb8793/bbmap/current/ jgi.ReformatReads in=${SAMP}_SymbB_transcriptome.fq out1=${SAMP}_B_1.fq out2=${SAMP}_B_2.fq
+done
+
+# reformat output fastq files SymbC
+for FILE in *_SymbC_transcriptome.fq.gz; do
+        echo ${FILE}
+        SAMP=$(basename -s _SymbC_transcriptome.fq.gz $FILE)
+        echo $SAMP
+/home/ewb8793/anaconda3/bin/java -ea -Xmx10g  -cp  /home/ewb8793/bbmap/current/ jgi.ReformatReads in=${SAMP}_SymbC_transcriptome.fq out1=${SAMP}_C_1.fq out2=${SAMP}_C_2.fq
+done
+
+# reformat output fastq files SymbD
+for FILE in *_SymbD_transcriptome.fq.gz; do
+        echo ${FILE}
+        SAMP=$(basename -s _SymbD_transcriptome.fq.gz $FILE)
+        echo $SAMP
+/home/ewb8793/anaconda3/bin/java -ea -Xmx10g  -cp  /home/ewb8793/bbmap/current/ jgi.ReformatReads in=${SAMP}_SymbD_transcriptome.fq out1=${SAMP}_D_1.fq out2=${SAMP}_D_2.fq
+done
+```
+
+# Salmon: Read Quantification
+[Salmon](https://salmon.readthedocs.io/en/latest/salmon.html#) is a tool built for transcript quantification. It uses two phases; indexing and quantification, to map samples. The first step, indexing, is independent of the reads and requires a reference transcript to build an index. Code for that is as follows: 
+
+## Index Building for Host Transcriptomes 
+For the host indexes, we can keep kmer values at a standard as we are confidant in the transcriptomes we have just built and the quality of the transcriptome. 
+
+```{linux, eval=FALSE}
+PATH=$PATH:/home/ewb8793/salmon-latest_linux_x86_64/bin
+DIR=/home/ewb8793/coral_classification/transcriptomes/salmon_index
+
+# Mcav index 
+/home/ewb8793/salmon-latest_linux_x86_64/bin/salmon index -t ../final_transcriptomes/mcav_ref_transcriptome.fa -i Mcav_index 
+
+# Ssid index 
+/home/ewb8793/salmon-latest_linux_x86_64/bin/salmon index -t ../final_transcriptomes/ssid_ref_transcriptome.fa -i Ssid_index
+
+# Ofav index 
+/home/ewb8793/salmon-latest_linux_x86_64/bin/salmon index -t ../final_transcriptomes/ofav_ref_transcriptome.fa -i Ofav_index
+
+# Cnat index 
+/home/ewb8793/salmon-latest_linux_x86_64/bin/salmon index -t ../final_transcriptomes/cnat_ref_transcriptome.fa -i Cnat_index
+
+#Pstr
+/home/ewb8793/salmon-latest_linux_x86_64/bin/salmon index -t ../final_transcriptomes/Pstr_reference_transcriptome.fa -i Pstr_index
+
+#Past
+/home/ewb8793/salmon-latest_linux_x86_64/bin/salmon index -t ../final_transcriptomes/Past_reference_transcriptome.fa -i Past_index
+
+#Oann
+/home/ewb8793/salmon-latest_linux_x86_64/bin/salmon index -t ../final_transcriptomes/oann_ref_transcriptome.fa -i Oann_index
+```
+
+## Index Building for Symbiont Transcriptomes 
+For the symbiont indexes, we can drop kmer values at a standard in order to get the best quality of reads.  
+```{linux, eval=FALSE}
+PATH=$PATH:/home/ewb8793/salmon-latest_linux_x86_64/bin
+DIR=/home/ewb8793/coral_classification/transcriptomes/salmon_index
+
+# Durusdinium index
+/home/ewb8793/salmon-latest_linux_x86_64/bin/salmon index -t ../final_transcriptomes/SymbD_transcriptome.fa -i Clade_D_index -k 23
+# Cladocopium index
+/home/ewb8793/salmon-latest_linux_x86_64/bin/salmon index -t ../final_transcriptomes/SymbC_transcriptome.fa -i Clade_C_index -k 23
+# Breviolum index
+/home/ewb8793/salmon-latest_linux_x86_64/bin/salmon index -t ../final_transcriptomes/SymbB_transcriptome.fa -i Clade_B_index -k 23
+# Symbiodinium index
+/home/ewb8793/salmon-latest_linux_x86_64/bin/salmon index -t ../final_transcriptomes/SymbA_transcriptome.fa -i Clade_A_index -k 23
+```
+
+## Mapping Reads: Use Salmon for quasi-mapping results 
+[Salmon](https://salmon.readthedocs.io/en/latest/salmon.html#) is a tool built for transcript quantification. It uses two phases; indexing and quantification, to map samples. The second phase: quantification, using quasi-mapping program to map samples to index. Quasi-mapping assumes a generally small file and increased number of repeats in reference sequences. It also takes into account splicing because a transcriptome is assumed to be used for the index. 
+
+#### Host Salmon Loop
+ 
+```{linux, eval=FALSE}
+#!/bin/bash
+#SBATCH -J salmon_quant_host            				# job name
+#SBATCH -o salmon_quant_host.o%j        				# output and error file name (%j expands to jobID)
+#SBATCH -e salmon_quant_host.e%j        				# name of stderr error file.
+#SBATCH -N 1                             				# number of nodes requested
+#SBATCH -n 8                                            # total number of mpi tasks requested
+#SBATCH -p short                                        # queue (partition) -- normal, development, etc.
+#SBATCH -t 48:00:00                                     # run time (hh:mm:ss) - 48 hours
+#SBATCH --mail-user=emily.buckley@uta.edu
+#SBATCH --mail-type=begin                               # email me when the job starts
+#SBATCH --mail-type=end                                 # email me when the job finishes
+#SBATCH --array=0-6                                     # array needs to match the number of samples you have (so Pstr has 7 samples so 0-6 is 7 total)
+
+PATH=$PATH:/home/ewb8793/salmon-latest_linux_x86_64/bin
+cd /home/ewb8793/coral_classification/past/salmon/host
+
+mkdir quants
+
+fname="sample_names.txt" # text file with just beginning of names ie Pstr_c2 etc 
+
+while read p; do  
+/home/ewb8793/salmon-latest_linux_x86_64/bin/salmon quant -i /home/ewb8793/coral_classification/transcriptomes/salmon_index/Past_index -l A \
+				-1 ${p}_host_1.fq \
+				-2 ${p}_host_2.fq \
+				-p 8 --validateMappings -o quants/${p}_quant
+done <$fname
+```
+
+#### Symbiodinium Salmon Loop
+```{linux, eval=FALSE}
+#!/bin/bash
+#SBATCH -J salmon_quant_A            					# job name
+#SBATCH -o salmon_quant_A.o%j        					# output and error file name (%j expands to jobID)
+#SBATCH -e salmon_quant_A.e%j        					# name of stderr error file.
+#SBATCH -N 1                             				# number of nodes requested
+#SBATCH -n 8                                            # total number of mpi tasks requested
+#SBATCH -p short                                        # queue (partition) -- normal, development, etc.
+#SBATCH -t 48:00:00                                     # run time (hh:mm:ss) - 48 hours
+#SBATCH --mail-user=emily.buckley@uta.edu
+#SBATCH --mail-type=begin                               # email me when the job starts
+#SBATCH --mail-type=end                                 # email me when the job finishes
+#SBATCH --array=0-6 
+
+
+PATH=$PATH:/home/ewb8793/salmon-latest_linux_x86_64/bin
+cd /home/ewb8793/coral_classification/pstr/salmon/A
+
+mkdir quants
+
+fname="sample_names.txt" 
+
+while read p; do  
+/home/ewb8793/salmon-latest_linux_x86_64/bin/salmon quant -i /home/ewb8793/coral_classification/transcriptomes/salmon_index/Clade_A_index -l A \
+				-1 ${p}_A_1.fq \
+				-2 ${p}_A_2.fq \
+				-p 8 --validateMappings -o quants/${p}_quant
+done <$fname
+```
+
+#### Breviolum Salmon Loop
+```{linux, eval=FALSE}
+#!/bin/bash
+#SBATCH -J salmon_quant_B            					# job name
+#SBATCH -o salmon_quant_B.o%j        					# output and error file name (%j expands to jobID)
+#SBATCH -e salmon_quant_B.e%j        					# name of stderr error file.
+#SBATCH -N 1                             				# number of nodes requested
+#SBATCH -n 8                                            # total number of mpi tasks requested
+#SBATCH -p short                                        # queue (partition) -- normal, development, etc.
+#SBATCH -t 48:00:00                                     # run time (hh:mm:ss) - 48 hours
+#SBATCH --mail-user=emily.buckley@uta.edu
+#SBATCH --mail-type=begin                               # email me when the job starts
+#SBATCH --mail-type=end                                 # email me when the job finishes
+#SBATCH --array=0-6 
+
+
+PATH=$PATH:/home/ewb8793/salmon-latest_linux_x86_64/bin
+cd /home/ewb8793/coral_classification/pstr/salmon/B
+
+mkdir quants
+
+fname="sample_names.txt" 
+
+while read p; do  
+/home/ewb8793/salmon-latest_linux_x86_64/bin/salmon quant -i /home/ewb8793/coral_classification/transcriptomes/salmon_index/Clade_B_index -l A \
+				-1 ${p}_B_1.fq \
+				-2 ${p}_B_2.fq \
+				-p 8 --validateMappings -o quants/${p}_quant
+done <$fname
+```
+
+#### Cladocopium Salmon Loop
+```{linux, eval=FALSE}
+#!/bin/bash
+#SBATCH -J salmon_quant_C            					# job name
+#SBATCH -o salmon_quant_C.o%j        					# output and error file name (%j expands to jobID)
+#SBATCH -e salmon_quant_C.e%j        					# name of stderr error file.
+#SBATCH -N 1                             				# number of nodes requested
+#SBATCH -n 8                                            # total number of mpi tasks requested
+#SBATCH -p short                                        # queue (partition) -- normal, development, etc.
+#SBATCH -t 48:00:00                                     # run time (hh:mm:ss) - 48 hours
+#SBATCH --mail-user=emily.buckley@uta.edu
+#SBATCH --mail-type=begin                               # email me when the job starts
+#SBATCH --mail-type=end                                 # email me when the job finishes
+#SBATCH --array=0-6 
+
+
+PATH=$PATH:/home/ewb8793/salmon-latest_linux_x86_64/bin
+cd /home/ewb8793/coral_classification/pstr/salmon/C
+
+mkdir quants
+
+fname="sample_names.txt" 
+
+while read p; do  
+/home/ewb8793/salmon-latest_linux_x86_64/bin/salmon quant -i /home/ewb8793/coral_classification/transcriptomes/salmon_index/Clade_C_index -l A \
+				-1 ${p}_C_1.fq \
+				-2 ${p}_C_2.fq \
+				-p 8 --validateMappings -o quants/${p}_quant
+done <$fname
+```
+
+#### Durusdinium Salmon Loop
+```{linux, eval=FALSE}
+#!/bin/bash
+#SBATCH -J salmon_quant_D           					# job name
+#SBATCH -o salmon_quant_D.o%j        					# output and error file name (%j expands to jobID)
+#SBATCH -e salmon_quant_D.e%j        					# name of stderr error file.
+#SBATCH -N 1                             				# number of nodes requested
+#SBATCH -n 8                                            # total number of mpi tasks requested
+#SBATCH -p short                                        # queue (partition) -- normal, development, etc.
+#SBATCH -t 48:00:00                                     # run time (hh:mm:ss) - 48 hours
+#SBATCH --mail-user=emily.buckley@uta.edu
+#SBATCH --mail-type=begin                               # email me when the job starts
+#SBATCH --mail-type=end                                 # email me when the job finishes
+#SBATCH --array=0-6 
+
+
+PATH=$PATH:/home/ewb8793/salmon-latest_linux_x86_64/bin
+cd /home/ewb8793/coral_classification/pstr/salmon/D
+
+mkdir quants
+
+fname="sample_names.txt" 
+
+while read p; do  
+/home/ewb8793/salmon-latest_linux_x86_64/bin/salmon quant -i /home/ewb8793/coral_classification/transcriptomes/salmon_index/Clade_D_index -l A \
+				-1 ${p}_D_1.fq \
+				-2 ${p}_D_2.fq \
+				-p 8 --validateMappings -o quants/${p}_quant
+done <$fname
+```
+
+# HMMER - Pfam Annotation of Contigs 
+
+All proteomes for the transriptomes used or generated in this study were annotated with Pfam with [HMMER](http://hmmer.org/). From the manual, "HMMER is used for searching sequence databases for sequence homologs, and for making sequence alignments. It implements methods using probabilistic models called profile hidden Markov models (profile HMMs)." Contig annotations were filtered for e-value < 0.00001. Annotations with Pfam domains ensure function of annotated sequences. 
+
+```{bash, eval=FALSE}
+#!/bin/bash
+#SBATCH -J hmmer_annotate            # job name
+#SBATCH -o hmmer_annotate.o%j        # output and error file name (%j expands to jobID)
+#SBATCH -e hmmer_annotate.e%j        # name of stderr error file.
+#SBATCH -N 1                                             # number of nodes requested
+#SBATCH -n 15                                            # total number of mpi tasks requested
+#SBATCH -p normal                                        # queue (partition) -- normal, development, etc.
+#SBATCH -t 4-00:00:00                                      # run time (hh:mm:ss) - 48 hours
+#SBATCH --mail-user=emily.buckley@uta.edu
+#SBATCH --mail-type=begin                                # email me when the job starts
+#SBATCH --mail-type=end                                  # email me when the job finishes
+
+PATH=$PATH:/home/ewb8793/hmmer-3.4/src
+
+for FILE in ../*.fa; do
+        echo ${FILE}
+        SAMP=$(basename -s .fa $FILE)
+        echo $SAMP
+
+/home/ewb8793/hmmer-3.4/src/hmmsearch --tblout ${SAMP}_tblout.txt --incE .00001 --cpu 10 /home/ewb8793/hmmer-3.4/Pfam-A.hmm.gz ../${SAMP}.fa
+/home/ewb8793/hmmer-3.4/src/hmmsearch --domtblout ${SAMP}_domtblout.txt --incE .00001 --cpu 10 /home/ewb8793/hmmer-3.4/Pfam-A.hmm.gz ../${SAMP}.fa
+/home/ewb8793/hmmer-3.4/src/hmmsearch --pfamtblout ${SAMP}_pfamtblout.txt --incE .00001 --cpu 10 /home/ewb8793/hmmer-3.4/Pfam-A.hmm.gz ../${SAMP}.fa
+done 
+```
