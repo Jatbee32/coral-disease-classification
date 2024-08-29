@@ -1,0 +1,813 @@
+---
+title: "Logistic Regression"
+author: "Emily Van Buren"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Set Up Working Directory 
+
+In this markdown we will go over how to perform parallel processed logistic regression models for all genes expressed in the SCTLD/WP classification study using [RegParallel](https://github.com/kevinblighe/RegParallel). 
+
+```{r, eval=FALSE}
+### load data 
+library(readr)
+library(tidyr)
+library(dplyr)
+library(mixOmics)
+library(ggrepel)
+library(PCAtools)
+library("ggalt")
+library(DESeq2)
+library(sva)
+library(glmnet)
+library(rIsing)
+library(RegParallel)
+library(caret)
+library(pROC)
+
+# set working directory 
+setwd("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/LG/")
+
+# set up variables - not batched
+
+# SCTLD Run 
+gene_counts <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/Normalization_DESeq/normalized_counts_vstCounts_Diseased.csv", row.names = "Entry"))
+
+# set working directory 
+
+metadata <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/counts/metadata_diseased.csv", row.names = "Sample"))
+metadata_diseased <- metadata %>% filter(metadata$Training_Testing == c("Training"))
+metadata_diseased$Training_Testing
+
+colnames(gene_counts) == rownames(metadata_diseased)
+```
+
+# SCTLD Training 
+
+In this round, we will be looking for genes predictive individually for SCTLD lesions only. There will be three types of algorithms tested, a generalized linear model with binomial, generalized linear model with glm.fit, and a linear model. 
+
+## Set Variables 
+```{r, eval=FALSE}
+# Change to binary values - SCTLD first 
+metadata_diseased <- metadata_diseased %>%
+  mutate(Disease = ifelse(Disease == "SCTLD",1,0))
+
+rlddata_coral <- as.data.frame(t(gene_counts))
+rlddata_coral$SCTLD <- metadata_diseased$Disease
+
+dim(rlddata_coral)
+# [1]    34 18598
+```
+
+## Generalized Linear Model with binomial(link = 'logit') 
+
+The first RegParallel was run as a generalized linear model with binomial(link = 'logit') link. The 18598 vst-normalized genes were input individually against the formula SCTLD ~ [gene_ID]. Outputs of this include beta, standard error, Z-score, P-value, Odds Ratio and the Odds Ratio Upper and lower values. Models were filtered for p-value < 0.05. In this model type, 1865 genes models were associated with SCTLD. 
+
+```{r, eval=FALSE}
+### Res1 - Generalized Linear Model with binomial(link = 'logit')
+
+#check a subset 
+
+res1 <- RegParallel(
+  data = rlddata_coral[ ,1:18598],
+  formula = 'SCTLD ~ [*]',
+  FUN = function(formula, data)
+    glm(formula = formula,
+        data = data,
+        family = binomial(link = 'logit')),
+  FUNtype = 'glm',
+  variables = colnames(rlddata_coral)[1:18597])
+
+# ##############################
+# #RegParallel
+# ##############################
+# 
+# System is:
+#   -- Darwin
+# Blocksize:
+#   -- 500
+# Cores / Threads:
+#   -- 3
+# Terms included in model:
+#   -- SCTLD
+# First 5 formulae:
+#   -- SCTLD ~ A0A023I7E1
+# -- SCTLD ~ A0A044RE18
+# -- SCTLD ~ A0A061IR73
+# -- SCTLD ~ A0A067XMP1
+# -- SCTLD ~ A0A075F932
+# Done!
+
+res1_df <- as.data.frame(res1[order(res1$P, decreasing=FALSE),])
+subset_res1 <- as.data.frame(subset(res1_df, P<0.05))
+# 1865 genes Associated with SCTLD
+write.csv(subset_res1, file = "RegParallel_res1_SCTLD.csv")
+```
+
+### Area Under the Reciever Operating Characteristics (ROC) Curve (AUC) 
+
+AUC curves were calculated for each model under the training dataset for those with a p-value < 0.05. A loop was generated to test the gene models, and then AUC was filtered >75. A total of 250 genes had an AUC of > 75. 
+```{r, eval=FALSE}
+#### AUC-ROC check 
+
+rlddata_subset1 <- rlddata_coral[,c(subset_res1$Variable)]
+rlddata_subset1$SCTLD <- rlddata_coral$SCTLD 
+
+# create a loop
+pdf(file = "ROC_SCTLD_res1_batched.pdf", height = 8, width = 8)
+mod_summaries_res1_all <- list() 
+for (i in colnames(rlddata_subset1)){
+  roc_x <- roc(rlddata_subset1$SCTLD, 
+               rlddata_subset1[,i],percent=TRUE, 
+               partial.auc=c(100, 90), partial.auc.correct=TRUE,
+               partial.auc.focus="sens", ci=TRUE, boot.n=100, 
+               ci.alpha=0.9, stratified=FALSE, plot=TRUE, col= 'red')
+  mod_summaries_res1_all[i] <-print(roc_x$auc)
+  
+}
+dev.off()
+lapply(mod_summaries_res1_all, function(x) write.table( data.frame(x), 'mod_summaries_res1_SCTLD.csv', append= T, sep=',' ))
+# in excel use find and select (go to special) to remove empty spaces 
+# use variables from summary to define the Variables 
+aucs <-  as.data.frame(read.csv("mod_summaries_res1_SCTLD.csv"))
+aucs_noNAs <- na.omit(aucs)
+nrow(aucs_noNAs[aucs_noNAs$AUC > 50,])
+# [1] 1771
+nrow(aucs_noNAs[aucs_noNAs$AUC > 75,])
+# [1] 250
+nrow(aucs_noNAs[aucs_noNAs$AUC > 80,])
+# [1] 46
+nrow(aucs_noNAs[aucs_noNAs$AUC > 85,])
+# [1] 15
+```
+
+### Transcriptome Presence Absense Filtering 
+Finally, genes were then filtered for presence in four or more transcriptomes using the previously generated Presence Absence file. 
+
+```{r, eval=FALSE}
+# filer out top annotating genes & annotate 
+PA <- as.data.frame(read.csv("/Volumes/My Passport/coral_classification/transcriptomes/annotations/PA_7sp.csv"))
+aucs_noNAs_PA <- merge(aucs_noNAs,PA,by="Entry")
+aucs_noNAs_PA <- aucs_noNAs_PA[ !duplicated(aucs_noNAs_PA$Entry), ]
+nrow(aucs_noNAs_PA[aucs_noNAs_PA$Total > 3,])
+# [1] 1216
+aucs_noNAs_PA <- aucs_noNAs_PA %>% filter(Total > 3)
+uniprot <- read.csv("/Volumes/My Passport/coral_classification/transcriptomes/annotations/uniprot_7species_reviewed_yes.csv")
+aucs_noNAs_PA <- merge(aucs_noNAs_PA,uniprot, by="Entry")
+write.csv(aucs_noNAs_PA, file = "res1_SCTLD_best_predictive.csv")
+```
+
+## Generlized Linear model with glm.fit
+
+The second RegParallel was run as a generalized linear model with with glm.fit. The 18598 vst-normalized genes were input individually against the formula SCTLD ~ [gene_ID]. Outputs of this include beta, standard error, Z-score, P-value, Odds Ratio and the Odds Ratio Upper and lower values. Models were filtered for p-value < 0.05. In this model type, 4094 genes models were associated with SCTLD. 
+
+```{r, eval=FALSE}
+res2 <- RegParallel(
+  data = rlddata_coral,
+  formula = '[*] ~ SCTLD',
+  FUN = function(formula, data)
+    glm(formula = formula,
+        data = data,
+        method = 'glm.fit'),
+  FUNtype = 'glm',
+  variables = colnames(rlddata_coral)[1:18597],
+  p.adjust = "none")
+# ##############################
+# #RegParallel
+# ##############################
+# 
+# System is:
+#   -- Darwin
+# Blocksize:
+#   -- 500
+# Cores / Threads:
+#   -- 3
+# Terms included in model:
+#   -- SCTLD
+# First 5 formulae:
+#   -- A0A023I7E1 ~ SCTLD
+# -- A0A044RE18 ~ SCTLD
+# -- A0A061IR73 ~ SCTLD
+# -- A0A067XMP1 ~ SCTLD
+# -- A0A075F932 ~ SCTLD
+# Done!
+
+subset_res2 <- as.data.frame(subset(res2, P<0.05))
+# 4094 Genes Associated with WP
+write.csv(subset_res2, file = "RegParallel_res2_SCTLD.csv")
+```
+
+### Area Under the Reciever Operating Characteristics (ROC) Curve (AUC) 
+
+AUC curves were calculated for each model under the training dataset for those with a p-value < 0.05. A loop was generated to test the gene models, and then AUC was filtered >75. A total of 250 genes had an AUC of > 75. 
+```{r, eval=FALSE}
+rlddata_subset2 <- rlddata_coral[,c(subset_res2$Variable)]
+rlddata_subset2$SCTLD <- rlddata_coral$SCTLD 
+
+# create a loop
+pdf(file = "ROC_SCTLD_res2.pdf", height = 8, width = 8)
+mod_summaries_res2_all <- list() 
+for (i in colnames(rlddata_subset2)){
+  roc_x <- roc(rlddata_subset2$SCTLD, 
+               rlddata_subset2[,i],percent=TRUE, 
+               partial.auc=c(100, 90), partial.auc.correct=TRUE,
+               partial.auc.focus="sens", ci=TRUE, boot.n=100, 
+               ci.alpha=0.9, stratified=FALSE, plot=TRUE, col= 'red')
+  mod_summaries_res2_all[i] <-print(roc_x$auc)
+  
+}
+dev.off()
+lapply(mod_summaries_res2_all, function(x) write.table( data.frame(x), 'mod_summaries_res2_SCTLD.csv', append= T, sep=',' ))
+# in excel use find and select (go to special) to remove empty spaces 
+# use variables from summary to define the Variables 
+aucs <-  as.data.frame(read.csv("mod_summaries_res2_SCTLD.csv"))
+aucs_noNAs <- na.omit(aucs)
+nrow(aucs_noNAs[aucs_noNAs$AUC > 50,])
+# [1] 1771
+nrow(aucs_noNAs[aucs_noNAs$AUC > 75,])
+# [1] 250
+nrow(aucs_noNAs[aucs_noNAs$AUC > 80,])
+# [1] 46
+nrow(aucs_noNAs[aucs_noNAs$AUC > 85,])
+# [1] 15
+```
+
+### Transcriptome Presence Absense Filtering 
+Finally, genes were then filtered for presence in four or more transcriptomes using the previously generated Presence Absence file. 
+
+```{r, eval=FALSE}
+# filer out top annotating genes & annotate 
+PA <- as.data.frame(read.csv("/Volumes/My Passport/coral_classification/transcriptomes/annotations/PA_7sp.csv"))
+aucs_noNAs_PA <- merge(aucs_noNAs,PA,by="Entry")
+aucs_noNAs_PA <- aucs_noNAs_PA[ !duplicated(aucs_noNAs_PA$Entry), ]
+nrow(aucs_noNAs_PA[aucs_noNAs_PA$Total > 3,])
+# [1] 1216
+aucs_noNAs_PA <- aucs_noNAs_PA %>% filter(Total > 3)
+uniprot <- read.csv("/Volumes/My Passport/coral_classification/transcriptomes/annotations/uniprot_7species_reviewed_yes.csv")
+aucs_noNAs_PA <- merge(aucs_noNAs_PA,uniprot, by="Entry")
+write.csv(aucs_noNAs_PA, file = "res2_SCTLD_best_predictive.csv")
+```
+
+## Linear Model  
+
+The third RegParallel was run as a linear model. The 18598 vst-normalized genes were input individually against the formula SCTLD ~ [gene_ID]. Outputs of this include beta, standard error, Z-score, P-value, Odds Ratio and the Odds Ratio Upper and lower values. Models were filtered for p-value < 0.05. In this model type, 4094 genes models were associated with SCTLD. 
+
+```{r, eval=FALSE}
+res3 <- RegParallel(
+  data = rlddata_coral,
+  formula = '[*] ~ SCTLD',
+  FUN = function(formula, data)
+    lm(formula = formula,
+       data = data),
+  FUNtype = 'lm',
+  variables = colnames(rlddata_coral)[1:18597],
+  p.adjust = "none")
+
+# ##############################
+# #RegParallel
+# ##############################
+# 
+# System is:
+#   -- Darwin
+# Blocksize:
+#   -- 500
+# Cores / Threads:
+#   -- 3
+# Terms included in model:
+#   -- SCTLD
+# First 5 formulae:
+#   -- A0A023I7E1 ~ SCTLD
+# -- A0A044RE18 ~ SCTLD
+# -- A0A061IR73 ~ SCTLD
+# -- A0A067XMP1 ~ SCTLD
+# -- A0A075F932 ~ SCTLD
+# Done!
+
+subset_res3 <- as.data.frame(subset(res3, P<0.05))
+# 4094 Genes Associated with WP
+write.csv(subset_res3, file = "RegParallel_res3_SCTLD.csv")
+```
+
+### Area Under the Reciever Operating Characteristics (ROC) Curve (AUC) 
+
+AUC curves were calculated for each model under the training dataset for those with a p-value < 0.05. A loop was generated to test the gene models, and then AUC was filtered >75. A total of 398 genes had an AUC of > 75. 
+```{r, eval=FALSE}
+rlddata_subset3 <- rlddata_coral[,c(subset_res3$Variable)]
+rlddata_subset3$SCTLD <- rlddata_coral$SCTLD 
+
+# create a loop
+pdf(file = "ROC_SCTLD_res3.pdf", height = 8, width = 8)
+mod_summaries_res3_all <- list() 
+for (i in colnames(rlddata_subset3)){
+  roc_x <- roc(rlddata_subset3$SCTLD, 
+               rlddata_subset3[,i],percent=TRUE, 
+               partial.auc=c(100, 90), partial.auc.correct=TRUE,
+               partial.auc.focus="sens", ci=TRUE, boot.n=100, 
+               ci.alpha=0.9, stratified=FALSE, plot=TRUE, col= 'red')
+  mod_summaries_res3_all[i] <-print(roc_x$auc)
+  
+}
+dev.off()
+lapply(mod_summaries_res3_all, 
+       function(x) write.table( data.frame(x), 
+                                'mod_summaries_res3_SCTLD.csv', append= T, sep=',' ))
+aucs <-  as.data.frame(read.csv("mod_summaries_res3_SCTLD.csv"))
+aucs_noNAs <- na.omit(aucs)
+nrow(aucs_noNAs[aucs_noNAs$AUC > 50,])
+# [1] 2450
+nrow(aucs_noNAs[aucs_noNAs$AUC > 75,])
+# [1] 398
+nrow(aucs_noNAs[aucs_noNAs$AUC > 80,])
+# [1] 54
+nrow(aucs_noNAs[aucs_noNAs$AUC > 85,])
+# [1] 18
+```
+
+### Transcriptome Presence Absense Filtering 
+Finally, genes were then filtered for presence in four or more transcriptomes using the previously generated Presence Absence file. 
+
+```{r, eval=FALSE}
+# filer out top annotating genes & annotate 
+PA <- as.data.frame(read.csv("/Volumes/My Passport/coral_classification/transcriptomes/annotations/PA_7sp.csv"))
+aucs_noNAs_PA <- merge(aucs_noNAs,PA,by="Entry")
+aucs_noNAs_PA <- aucs_noNAs_PA[ !duplicated(aucs_noNAs_PA$Entry), ]
+nrow(aucs_noNAs_PA[aucs_noNAs_PA$Total > 3,])
+# [1] 1543
+aucs_noNAs_PA <- aucs_noNAs_PA %>% filter(Total > 3)
+uniprot <- read.csv("/Volumes/My Passport/coral_classification/transcriptomes/annotations/uniprot_7species_reviewed_yes.csv")
+aucs_noNAs_PA <- merge(aucs_noNAs_PA,uniprot, by="Entry")
+write.csv(aucs_noNAs_PA, file = "res3_SCTLD_best_predictive.csv")
+```
+
+## Save Data 
+```{r, eval=FALSE}
+save(gene_counts, i, metadata, metadata_diseased, mod_summaries_res2_all, mod_summaries_res3_all, res2, res3, rlddata_coral, rlddata_subset2, rlddata_subset3, roc_x, subset_res1, subset_res2, subset_res3, file = "SCTLD_LG.RData")
+```
+
+# WP Training 
+
+In this round, we will be looking for genes predictive individually for WP lesions only. There will be three types of algorithms tested, a generalized linear model with binomial,  
+
+## Set Variables 
+```{r, eval=FALSE}
+# set working directory 
+metadata <- as.data.frame(read.csv("/Volumes/My Passport/coral_classification/disease_classification/counts/metadata_diseased.csv", row.names = "Sample"))
+metadata_diseased <- metadata %>% filter(metadata$Training_Testing == c("Training"))
+metadata_diseased$Training_Testing
+
+colnames(gene_counts) == rownames(metadata_diseased)
+
+# Change to binary values - WP first 
+metadata_diseased <- metadata_diseased %>%
+  mutate(Disease = ifelse(Disease == "WP",1,0))
+
+rlddata_coral <- as.data.frame(t(gene_counts))
+rlddata_coral$WP <- metadata_diseased$Disease
+
+dim(rlddata_coral)
+#[1]    34 18598
+```
+
+## Generalized Linear Model with binomial(link = 'logit') 
+
+The first RegParallel was run as a generalized linear model with binomial(link = 'logit') link. The 18598 vst-normalized genes were input individually against the formula WP ~ [gene_ID]. Outputs of this include beta, standard error, Z-score, P-value, Odds Ratio and the Odds Ratio Upper and lower values. Models were filtered for p-value < 0.05. In this model type, 1865 genes models were associated with WP. 
+
+```{r, eval=FALSE}
+res1 <- RegParallel(
+  data = rlddata_coral[ ,1:18598],
+  formula = 'WP ~ [*]',
+  FUN = function(formula, data)
+    glm(formula = formula,
+        data = data,
+        family = binomial(link = 'logit')),
+  FUNtype = 'glm',
+  variables = colnames(rlddata_coral)[1:18597])
+# ##############################
+# #RegParallel
+# ##############################
+# 
+# System is:
+#   -- Darwin
+# Blocksize:
+#   -- 500
+# Cores / Threads:
+#   -- 3
+# Terms included in model:
+#   -- WP
+# First 5 formulae:
+#   -- WP ~ A0A023I7E1
+# -- WP ~ A0A044RE18
+# -- WP ~ A0A061IR73
+# -- WP ~ A0A067XMP1
+# -- WP ~ A0A075F932
+# Done!
+
+res1_df <- as.data.frame(res1[order(res1$P, decreasing=FALSE),])
+subset_res1 <- as.data.frame(subset(res1_df, P<0.05)) 
+# 1865 genes signficiantly associated with WP
+write.csv(subset_res1, file = "RegParallel_res1_WP.csv")
+```
+
+### Area Under the Reciever Operating Characteristics (ROC) Curve (AUC) 
+
+AUC curves were calculated for each model under the training dataset for those with a p-value < 0.05. A loop was generated to test the gene models, and then AUC was filtered >75. A total of 54 genes had an AUC of > 75. 
+```{r, eval=FALSE}
+rlddata_subset1 <- rlddata_coral[,c(subset_res1$Variable)]
+rlddata_subset1$WP <- rlddata_coral$WP
+
+# create a loop
+pdf(file = "ROC_WP_res1.pdf", height = 8, width = 8)
+mod_summaries_res1_all <- list() 
+for (i in colnames(rlddata_subset1)){
+  roc_x <- roc(rlddata_subset1$WP, 
+               rlddata_subset1[,i],percent=TRUE, 
+               partial.auc=c(100, 90), partial.auc.correct=TRUE,
+               partial.auc.focus="sens", ci=TRUE, boot.n=100, 
+               ci.alpha=0.9, stratified=FALSE, plot=TRUE, col= 'red')
+  mod_summaries_res1_all[i] <-print(roc_x$auc)
+  
+}
+dev.off()
+lapply(mod_summaries_res1_all, function(x) write.table( data.frame(x), 'mod_summaries_res1_WP.csv', append= T, sep=',' ))
+# in excel use find and select (go to special) to remove empty spaces 
+# use variables from summary to define the Variables 
+aucs <-  as.data.frame(read.csv("mod_summaries_res1_WP.csv"))
+aucs_noNAs <- na.omit(aucs)
+nrow(aucs_noNAs[aucs_noNAs$AUC > 50,])
+# [1] 1788
+nrow(aucs_noNAs[aucs_noNAs$AUC > 75,])
+# [1] 54
+nrow(aucs_noNAs[aucs_noNAs$AUC > 80,])
+# [1] 13
+nrow(aucs_noNAs[aucs_noNAs$AUC > 85,])
+# [1] 5
+```
+
+### Transcriptome Presence Absense Filtering 
+Finally, genes were then filtered for presence in four or more transcriptomes using the previously generated Presence Absence file. 
+
+```{r, eval=FALSE}
+# filer out top annotating genes & annotate 
+PA <- as.data.frame(read.csv("/Volumes/My Passport/coral_classification/transcriptomes/annotations/PA_7sp.csv"))
+aucs_noNAs_PA <- merge(aucs_noNAs,PA,by="Entry")
+aucs_noNAs_PA <- aucs_noNAs_PA[ !duplicated(aucs_noNAs_PA$Entry), ]
+nrow(aucs_noNAs_PA[aucs_noNAs_PA$Total > 3,])
+# [1] 1227
+aucs_noNAs_PA <- aucs_noNAs_PA %>% filter(Total > 3)
+uniprot <- read.csv("/Volumes/My Passport/coral_classification/transcriptomes/annotations/uniprot_7species_reviewed_yes.csv")
+aucs_noNAs_PA <- merge(aucs_noNAs_PA,uniprot, by="Entry")
+nrow(aucs_noNAs_PA[aucs_noNAs_PA$AUC > 75,])
+# 52 genes present in 4 or more species with AUC 75 or more
+write.csv(aucs_noNAs_PA, file = "res1_WP_best_predictive.csv")
+```
+
+## Generlized Linear model with glm.fit
+
+The second RegParallel was run as a generalized linear model with with glm.fit. The 18598 vst-normalized genes were input individually against the formula A0A023I7E1 ~ WP. Outputs of this include beta, standard error, Z-score, P-value, Odds Ratio and the Odds Ratio Upper and lower values. Models were filtered for p-value < 0.05. In this model type, 4094 genes models were associated with WP. 
+
+```{r, eval=FALSE}
+res2 <- RegParallel(
+  data = rlddata_coral,
+  formula = '[*] ~ WP',
+  FUN = function(formula, data)
+    glm(formula = formula,
+        data = data,
+        method = 'glm.fit'),
+  FUNtype = 'glm',
+  variables = colnames(rlddata_coral)[1:18597],
+  p.adjust = "none")
+
+# ##############################
+# #RegParallel
+# ##############################
+# 
+# System is:
+#   -- Darwin
+# Blocksize:
+#   -- 500
+# Cores / Threads:
+#   -- 3
+# Terms included in model:
+#   -- WP
+# First 5 formulae:
+#   -- A0A023I7E1 ~ WP
+# -- A0A044RE18 ~ WP
+# -- A0A061IR73 ~ WP
+# -- A0A067XMP1 ~ WP
+# -- A0A075F932 ~ WP
+# Done!
+
+subset_res2 <- as.data.frame(subset(res2, P<0.05))
+# 4094 Genes Associated with WP
+write.csv(subset_res2, file = "RegParallel_res2_WP.csv")
+```
+
+### Area Under the Reciever Operating Characteristics (ROC) Curve (AUC) 
+
+AUC curves were calculated for each model under the training dataset for those with a p-value < 0.05. A loop was generated to test the gene models, and then AUC was filtered >75. A total of 56 genes had an AUC of > 75. 
+```{r, eval=FALSE}
+rlddata_subset2 <- rlddata_coral[,c(subset_res2$Variable)]
+rlddata_subset2$WP <- rlddata_coral$WP
+
+# create a loop
+pdf(file = "ROC_WP_res2.pdf", height = 8, width = 8)
+mod_summaries_res2_all <- list() 
+for (i in colnames(rlddata_subset2)){
+  roc_x <- roc(rlddata_subset2$WP, 
+               rlddata_subset2[,i],percent=TRUE, 
+               partial.auc=c(100, 90), partial.auc.correct=TRUE,
+               partial.auc.focus="sens", ci=TRUE, boot.n=100, 
+               ci.alpha=0.9, stratified=FALSE, plot=TRUE, col= 'red')
+  mod_summaries_res2_all[i] <-print(roc_x$auc)
+  
+}
+dev.off()
+lapply(mod_summaries_res2_all, function(x) write.table( data.frame(x), 'mod_summaries_res2_WP.csv', append= T, sep=',' ))
+# in excel use find and select (go to special) to remove empty spaces 
+# use variables from summary to define the Variables 
+aucs <-  as.data.frame(read.csv("mod_summaries_res2_WP.csv"))
+aucs_noNAs <- na.omit(aucs)
+nrow(aucs_noNAs[aucs_noNAs$AUC > 50,])
+# [1] 3869
+nrow(aucs_noNAs[aucs_noNAs$AUC > 75,])
+# [1] 56
+nrow(aucs_noNAs[aucs_noNAs$AUC > 80,])
+# [1] 13
+nrow(aucs_noNAs[aucs_noNAs$AUC > 85,])
+# [1] 5
+```
+
+### Transcriptome Presence Absense Filtering 
+Finally, genes were then filtered for presence in four or more transcriptomes using the previously generated Presence Absence file. 
+
+```{r, eval=FALSE}
+PA <- as.data.frame(read.csv("/Volumes/My Passport/coral_classification/transcriptomes/annotations/PA_7sp.csv"))
+aucs_noNAs_PA <- merge(aucs_noNAs,PA,by="Entry")
+aucs_noNAs_PA <- aucs_noNAs_PA[ !duplicated(aucs_noNAs_PA$Entry), ]
+nrow(aucs_noNAs_PA[aucs_noNAs_PA$Total > 3,])
+# [1] 3
+aucs_noNAs_PA <- aucs_noNAs_PA %>% filter(Total > 3)
+uniprot <- read.csv("/Volumes/My Passport/coral_classification/transcriptomes/annotations/uniprot_7species_reviewed_yes.csv")
+aucs_noNAs_PA <- merge(aucs_noNAs_PA,uniprot, by="Entry")
+nrow(aucs_noNAs_PA[aucs_noNAs_PA$AUC > 75,])
+# 53 genes present in 4 or more species with AUC 75 or more
+write.csv(aucs_noNAs_PA, file = "res2_WP_best_predictive.csv")
+```
+
+## Linear Model  
+
+The third RegParallel was run as a linear model. The 18598 vst-normalized genes were input individually against the formula [gene_ID] ~ WP. Outputs of this include beta, standard error, Z-score, P-value, Odds Ratio and the Odds Ratio Upper and lower values. Models were filtered for p-value < 0.05. In this model type, 4094 genes models were associated with WP. 
+
+```{r, eval=FALSE}
+res3 <- RegParallel(
+  data = rlddata_coral,
+  formula = '[*] ~ WP',
+  FUN = function(formula, data)
+    lm(formula = formula,
+       data = data),
+  FUNtype = 'lm',
+  variables = colnames(rlddata_coral)[1:18597],
+  p.adjust = "none")
+# ##############################
+# #RegParallel
+# ##############################
+# 
+# System is:
+#   -- Darwin
+# Blocksize:
+#   -- 500
+# Cores / Threads:
+#   -- 3
+# Terms included in model:
+#   -- WP
+# First 5 formulae:
+#   -- A0A023I7E1 ~ WP
+# -- A0A044RE18 ~ WP
+# -- A0A061IR73 ~ WP
+# -- A0A067XMP1 ~ WP
+# -- A0A075F932 ~ WP
+# Done!
+
+subset_res3 <- as.data.frame(subset(res3, P<0.05))
+# 4094 Genes Associated with WP
+write.csv(subset_res3, file = "RegParallel_res3_WP.csv")
+```
+
+### Area Under the Reciever Operating Characteristics (ROC) Curve (AUC) 
+
+AUC curves were calculated for each model under the training dataset for those with a p-value < 0.05. A loop was generated to test the gene models, and then AUC was filtered >75. A total of 398 genes had an AUC of > 75. 
+
+
+```{r, eval=FALSE}
+rlddata_subset3 <- rlddata_coral[,c(subset_res3$Variable)]
+rlddata_subset3$WP <- rlddata_coral$WP 
+
+# create a loop
+pdf(file = "ROC_WP_res3.pdf", height = 8, width = 8)
+mod_summaries_res3_all <- list() 
+for (i in colnames(rlddata_subset3)){
+  roc_x <- roc(rlddata_subset3$WP, 
+               rlddata_subset3[,i],percent=TRUE, 
+               partial.auc=c(100, 90), partial.auc.correct=TRUE,
+               partial.auc.focus="sens", ci=TRUE, boot.n=100, 
+               ci.alpha=0.9, stratified=FALSE, plot=TRUE, col= 'red')
+  mod_summaries_res3_all[i] <-print(roc_x$auc)
+  
+}
+dev.off()
+lapply(mod_summaries_res3_all, 
+       function(x) write.table( data.frame(x), 
+                                'mod_summaries_res3_WP.csv', append= T, sep=',' ))
+aucs <-  as.data.frame(read.csv("mod_summaries_res3_WP.csv"))
+aucs_noNAs <- na.omit(aucs)
+nrow(aucs_noNAs[aucs_noNAs$AUC > 50,])
+# [1] 3869
+nrow(aucs_noNAs[aucs_noNAs$AUC > 75,])
+# [1] 56
+nrow(aucs_noNAs[aucs_noNAs$AUC > 80,])
+# [1] 13
+nrow(aucs_noNAs[aucs_noNAs$AUC > 85,])
+# [1] 5
+```
+
+### Transcriptome Presence Absense Filtering 
+Finally, genes were then filtered for presence in four or more transcriptomes using the previously generated Presence Absence file. 
+```{r, eval=FALSE}
+PA <- as.data.frame(read.csv("/Volumes/My Passport/coral_classification/transcriptomes/annotations/PA_7sp.csv"))
+aucs_noNAs_PA <- merge(aucs_noNAs,PA,by="Entry")
+aucs_noNAs_PA <- aucs_noNAs_PA[ !duplicated(aucs_noNAs_PA$Entry), ]
+nrow(aucs_noNAs_PA[aucs_noNAs_PA$Total > 3,])
+# [1] 1579
+aucs_noNAs_PA <- aucs_noNAs_PA %>% filter(Total > 3)
+uniprot <- read.csv("/Volumes/My Passport/coral_classification/transcriptomes/annotations/uniprot_7species_reviewed_yes.csv")
+aucs_noNAs_PA <- merge(aucs_noNAs_PA,uniprot, by="Entry")
+nrow(aucs_noNAs_PA[aucs_noNAs_PA$AUC > 75,])
+# 53 genes present in 4 or more species with AUC 75 or more
+write.csv(aucs_noNAs_PA, file = "res3_WP_best_predictive.csv")
+```
+
+## Save Data 
+```{r, eval=FALSE}
+save(gene_counts, i, metadata, metadata_diseased, mod_summaries_res1_all, mod_summaries_res2_all, mod_summaries_res3_all, res1, res2, res3, rlddata_coral, rlddata_subset1, rlddata_subset2, rlddata_subset3, roc_x, subset_res1, subset_res2, subset_res3, file = "WP_LG.RData")
+```
+
+# Venn Diagrams 
+
+To compare the genes found in each of the model training, we will use venn diagrams to visualize and obtain overlapping genes if applicable. 
+
+## set working directory 
+
+```{r, eval=FALSE}
+library(tidyverse)
+library(ggvenn)
+library(ggplot2)
+library(dplyr)
+library(ggpubr)
+
+setwd("/Volumes/My Passport/coral_classification/disease_classification/LG/")
+
+WP_res1 <- as.data.frame(read.csv("res1_WP_best_predictive.csv"))
+WP_res1 <- WP_res1 %>% filter(AUC > 75)
+WP_res2 <- as.data.frame(read.csv("res2_WP_best_predictive.csv"))
+WP_res2 <- WP_res2 %>% filter(AUC > 75)
+WP_res3 <- as.data.frame(read.csv("res3_WP_best_predictive.csv"))
+WP_res3 <- WP_res3 %>% filter(AUC > 75)
+
+SCTLD_res1 <- as.data.frame(read.csv("res1_SCTLD_best_predictive.csv"))
+SCTLD_res1 <- SCTLD_res1 %>% filter(AUC > 75)
+SCTLD_res2 <- as.data.frame(read.csv("res2_SCTLD_best_predictive.csv"))
+SCTLD_res2 <- SCTLD_res2 %>% filter(AUC > 75)
+SCTLD_res3 <- as.data.frame(read.csv("res3_SCTLD_best_predictive.csv"))
+SCTLD_res3 <- SCTLD_res3 %>% filter(AUC > 75)
+```
+
+## Unique Function Set Up 
+
+Functions made here include interset, union, and setdiff, which can help identify unique sections of comparisons of lists. 
+
+```{r, eval=FALSE}
+## Isolation of Intersect/Unique Genes in Venn Diagram
+
+Intersect <- function (x) {  
+  # Multiple set version of intersect
+  # x is a list
+  if (length(x) == 1) {
+    unlist(x)
+  } else if (length(x) == 2) {
+    intersect(x[[1]], x[[2]])
+  } else if (length(x) > 2){
+    intersect(x[[1]], Intersect(x[-1]))
+  }
+}
+
+Union <- function (x) {  
+  # Multiple set version of union
+  # x is a list
+  if (length(x) == 1) {
+    unlist(x)
+  } else if (length(x) == 2) {
+    union(x[[1]], x[[2]])
+  } else if (length(x) > 2) {
+    union(x[[1]], Union(x[-1]))
+  }
+}
+
+Setdiff <- function (x, y) {
+  # Remove the union of the y's from the common x's. 
+  # x and y are lists of characters.
+  xx <- Intersect(x)
+  yy <- Union(y)
+  setdiff(xx, yy)
+}
+```
+
+## WP Comparisons 
+
+This venn diagram compares the genes significant to the three trials of RegParallel. 
+```{r, eval=FALSE}
+# WP venn diagrams 
+WP_LG <- list(
+  res1 = WP_res1$Entry,
+  res2 = WP_res2$Entry,
+  res3 = WP_res3$Entry
+)
+
+# Venn Diagram 
+ggvenn(
+  WP_LG,
+  fill_color = c("#FFF7BC", "#A1DAB4", "#41B6C4"),
+  stroke_size = 0.5, set_name_size = 5
+)
+```
+
+## SCTLD Comparisons 
+This venn diagram compares the genes significant to the three trials of RegParallel. 
+```{r, eval=FALSE}
+# SCTLD venn diagrams 
+SCTLD_LG <- list(
+  res1 = SCTLD_res1$Entry,
+  res2 = SCTLD_res2$Entry,
+  res3 = SCTLD_res3$Entry
+)
+
+# Venn Diagram 
+ggvenn(
+  SCTLD_LG,
+  fill_color = c("#FFF7BC", "#A1DAB4", "#41B6C4"),
+  stroke_size = 0.5, set_name_size = 5
+)
+```
+
+## WP and SCTLD Comparisons 
+
+We will be continuing with binomial logistic regression as the choice algorithm for this study. We created a venn diagram to compare the overlap of signficiant genes from the WP and SCTLD studies. We also generate a list of the genes into excel sheets. 
+
+### Binomial 
+```{r, eval=FALSE}
+# Binomial Logistic Regression venn diagrams 
+res1_LG <- list(
+  WP = WP_res1$Entry,
+  SCTLD = SCTLD_res1$Entry
+)
+
+# Venn Diagram 
+ggvenn(
+  res1_LG,
+  fill_color = c("#d8b365", "#5ab4ac"),
+  stroke_size = 0.5, set_name_size = 5
+)
+```
+
+### Shared Biomarkers 
+
+```{r, eval=FALSE}
+# shared biomarkers 
+overlap_biomarkers <- Intersect(res1_LG)
+
+# Unique biomarkers
+uniprot <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations/uniprot_7species_reviewed_yes.csv", row.names = "Entry")
+SCTLD_unique <- Setdiff(res1_LG[c("SCTLD")], res1_LG[c("WP")])
+SCTLD_unique_anno <- uniprot[SCTLD_unique,]
+SCTLD_unique_anno$Entry <- rownames(SCTLD_unique_anno)
+SCTLD_unique_anno <- merge(SCTLD_unique_anno,SCTLD_res1,by="Entry")
+write.csv(SCTLD_unique_anno, file = "~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/LG/SCTLD_unique_biomarkers_annot.csv")
+WP_unique <- Setdiff(res1_LG[c("WP")], res1_LG[c("SCTLD")])
+WP_unique_anno <- uniprot[WP_unique,]
+WP_unique_anno$Entry <- rownames(WP_unique_anno)
+WP_unique_anno <- merge(WP_unique_anno,WP_res1,by="Entry")
+write.csv(WP_unique_anno, file = "~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/LG/WP_unique_biomarkers_annot.csv")
+```
+
+## Save Data
+
+```{r, eval=FALSE}
+ls()
+# [1] "Intersect"          "overlap_biomarkers" "res1_LG"            "SCTLD_LG"          
+# [5] "SCTLD_res1"         "SCTLD_res2"         "SCTLD_res3"         "SCTLD_unique"      
+# [9] "Setdiff"            "Union"              "WP_LG"              "WP_res1"           
+# [13] "WP_res2"            "WP_res3"            "WP_unique"   
+save(Intersect, overlap_biomarkers, res1_LG, SCTLD_LG, SCTLD_res1, SCTLD_res2, 
+     SCTLD_res3, SCTLD_unique, Setdiff, Union, WP_LG, WP_res1, WP_res2, 
+     WP_res3, WP_unique, file = "venn_diagrams.RData")
+```

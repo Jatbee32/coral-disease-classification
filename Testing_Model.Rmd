@@ -1,0 +1,521 @@
+---
+title: "Testing_Model"
+author: "Emily Van Buren"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Set Up Working Directory 
+
+In this markdown we will go over how to test the in situ samples with the identified biomarkers classifying SCTLD and WP. We will be using a partial least squares discriminant analysis (PLS-DA) from the package [mixOmics](https://mixomics.org/). 
+
+```{r, eval=FALSE}
+# load packages 
+library(readr)
+library(tidyr)
+library(dplyr)
+library(ggrepel)
+library("ggalt")
+library(DESeq2)
+library(sva)
+
+# set working directory 
+setwd("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/testing/normalizing_counts/")
+
+# load counts 
+training_samples <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/counts/gene_counts_diseased_raw.csv")
+mcav_field <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/mcav_field/salmon/host/mcav_field_raw_counts.csv")
+ofav_field <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/ofav_field/salmon/host/ofav_field_raw_counts.csv")
+
+# merge counts 
+gene_counts <-merge(training_samples,mcav_field,by="Entry",all=TRUE)
+gene_counts <-merge(gene_counts,ofav_field,by="Entry",all=TRUE)
+gene_counts[is.na(gene_counts)] = 0
+rownames(gene_counts) <- gene_counts$Entry
+gene_counts <- gene_counts[,-c(1)]
+write.csv(gene_counts, file = "gene_counts_nobatch_field.csv")
+
+metadata <- as.data.frame(read.csv("metadata_diseased.csv", row.names = "Sample"))
+rownames(metadata)
+rownames(metadata) == colnames(gene_counts)
+
+countData <- gene_counts
+```
+
+## Batch Correction 
+
+In this testing, we will batch correct the samples from their particular study they come from (WP experimental, SCTLD experimental, WP in situ, SCTLD in situ). We were unable to complete a batch correction on the training dataset exclusively due to the fact that the batch groups were also the classification groups and caused over-correction. Batch correction was done using the function ComBat_seq() from package [sva](https://bioconductor.org/packages/release/bioc/html/sva.html)
+
+```{r, eval=FALSE}
+
+# Batch effect correction 
+batch <- c(rep(1,19),rep(2,15),rep(3,4),rep(4,2))
+print(batch)
+
+countData <- as.matrix(countData)
+
+adjusted <- ComBat_seq(countData,batch=batch,group = NULL)
+# Found 4 batches
+# Using null model in ComBat-seq.
+# Adjusting for 0 covariate(s) or covariate level(s)
+# Estimating dispersions
+# Fitting the GLM model
+# Shrinkage off - using GLM estimates for parameters
+# Adjusting the data
+adjusted <- as.data.frame(adjusted)
+
+write.csv(adjusted, "gene_counts_batch_diseased_with_field.csv") # open in excel and put Entry in rowname column
+
+ls()
+# [1] "adjusted"          "batch"             "countData"         "metadata"
+# [5] "metadata_diseased"
+
+save(adjusted, countData, batch, metadata, file = "batch_norm.RData")
+```
+
+## Variance Stabilizing Transformation 
+
+A variance stabilizing transformation (vst) normalization was performed on the lesion samples from training and testing. Vst was performed using the normalization functions in [DESeq2](https://bioconductor.org/packages/release/bioc/html/DESeq2.html)
+
+```{r, eval=FALSE}
+# Variance Stabilizing Transformation - Normalization
+countData <- adjusted
+colData <- metadata
+
+row.names(colData) == colnames(countData)
+
+
+dds <- DESeqDataSetFromMatrix(countData = round(countData),
+                              colData = colData,
+                              design = ~ Species + Disease)
+# converting counts to integer mode
+# Warning message:
+#   In DESeqDataSet(se, design = design, ignoreRank) :
+#   some variables in design formula are characters, converting to factors
+
+dds <- dds[ rowMeans(counts(dds)) > 10, ] 
+vst <- vst(dds, blind=FALSE) 
+vstCounts <- assay(vst)
+write.csv(vstCounts, file = "normalized_counts_vstCounts_Diseased_batch.csv")
+```
+
+## PLS-DA Model 
+
+A PLS-DA model is made using the training samples only from the experimental exposure studies. From there, the PLS-DA model was then used to test the in situ samples. These samples were classified into either WP or SCTLD based on the model generated. 
+
+### Set up working directory 
+
+To set up the working directory, the vst-normalized training/testing gene expression dataset was isolated and used to build the model. A total of 34 samples were used to build this model, and the metadata to build the PLS-DA was also reflective of just the training samples. 
+
+```{r, eval=FALSE}
+setwd("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/testing/PLS_DA_model/")
+library(readr)
+library(tidyr)
+library(dplyr)
+library(mixOmics)
+library(ggrepel)
+library(PCAtools)
+library("ggalt")
+library(DESeq2)
+library(sva)
+
+
+# All Biomarkers - BATCH 
+biomarkers <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/potential_biomarkers/biomarker_list_noalgal.csv"))
+gene_counts <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/testing/normalizing_counts/normalized_counts_vstCounts_Diseased_batch.csv", row.names = "Entry"))
+testing_genes <- biomarkers$Entry
+gene_counts <- gene_counts[ testing_genes, ]
+
+## write csv file for testing genes gene counts 
+gene_counts <- na.omit(gene_counts)
+write.csv(gene_counts, "bmkr_expression_all.csv")
+
+
+metadata <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/testing/normalizing_counts/metadata_diseased.csv", row.names = "Sample"))
+metadata_diseased <- metadata %>% filter(metadata$Training_Testing == c("Training"))
+
+X <- (t(gene_counts))
+X <- as.data.frame(X)
+X <- X[c(1:34),]
+dim(X)
+# [1]  34 463
+
+Y <- as.factor(metadata_diseased$Disease)
+summary(Y)
+# SCTLD    WP 
+# 19    15 
+```
+
+### Build PLS-DA Model with Training Samples 
+
+Following the training PLS-DA methods, a partial least squares discriminant analysis model was generated using the 463 identified biomarkers. To create the model we will load in our gene counts (X) and our disease classification (Y). Background was calculated along with the error rates and perfect components identified based on error rate. Finally, the AUC values with their p-values were obtained. 
+```{r, eval=FALSE}
+# PLS-DA Analysis 
+
+# sample plot 
+coral.plsda.all.biomarkers <- plsda(X, Y, ncomp = 10)  # set ncomp to 10 for performance assessment later
+plotIndiv(coral.plsda.all.biomarkers, comp = 1:2,
+          ind.names = metadata_diseased$Species, 
+          group= metadata_diseased$Disease, 
+          legend = TRUE, 
+          ellipse = TRUE,  
+          title = 'PLS-DA All Biomarkers', 
+          # pch = c('A' = 21, 'B'= 22, 'C'= 23, 'D' = 24)[as.character(metadata$Top_Symbiont)],
+          col = c('#5ab4ac','#d8b365'))
+
+# with background
+background = background.predict(coral.plsda.all.biomarkers , comp.predicted=2, dist = "max.dist") 
+
+
+plotIndiv(coral.plsda.all.biomarkers , comp = 1:2,
+          group = metadata_diseased$Disease, 
+          ind.names = metadata_diseased$Species, 
+          title = "Maximum distance",
+          legend = TRUE,  background = background, 
+          col = c('#5ab4ac','#d8b365'))
+dev.off()
+
+pdf(file = "PLS-DA_Disease_Classification_bmkr_all.pdf", width = 8, height = 8)
+plotIndiv(coral.plsda.all.biomarkers, comp = 1:2,
+          ind.names = metadata_diseased$Species, 
+          group= metadata_diseased$Disease, 
+          legend = TRUE, 
+          ellipse = TRUE,  
+          title = 'PLS-DA All Biomarkers', 
+          # pch = c('A' = 21, 'B'= 22, 'C'= 23, 'D' = 24)[as.character(metadata$Top_Symbiont)],
+          col = c('#5ab4ac','#d8b365'))
+dev.off()
+
+
+pdf(file = "PLS-DA_Disease_Classification_bkgrnd_bmkr_all.pdf", width = 8, height = 8)
+plotIndiv(coral.plsda.all.biomarkers , comp = 1:2,
+          group = metadata_diseased$Disease, 
+          ind.names = metadata_diseased$Species, 
+          title = "Maximum distance",
+          legend = TRUE,  background = background, 
+          col = c('#5ab4ac','#d8b365'))
+dev.off()
+
+set.seed(2543) # for reproducibility, only when the `cpus' argument is not used
+perf.plsda.coral.all <- perf(coral.plsda.all.biomarkers, 
+                             validation = "Mfold", folds = 5, 
+                             progressBar = FALSE, auc = TRUE, nrepeat = 10) 
+perf.plsda.coral.all$error.rate 
+
+perf.plsda.coral.all$choice.ncomp
+# max.dist centroids.dist mahalanobis.dist
+# overall        6              8                6
+# BER            6              8                6
+
+plot(perf.plsda.coral.all, col = color.mixo(5:7), sd = TRUE, legend.position = "horizontal")
+
+auc.plsda = auroc(coral.plsda.all.biomarkers, roc.comp = 1)
+# $Comp1
+# AUC   p-value
+# SCTLD vs WP 0.9895 1.308e-06
+
+dev.off()
+
+pdf(file = "PLS-DA_horizontal_bmkr_all.pdf", width = 8, height = 8)
+plot(perf.plsda.coral.all, col = color.mixo(5:7), sd = TRUE, legend.position = "horizontal")
+dev.off()
+pdf(file = "PLS-DA_DO_ROC_bmkr_all.pdf", width = 11, height = 8)
+auc.plsda = auroc(coral.plsda.all.biomarkers, roc.comp = 1)
+# $Comp1
+# AUC   p-value
+# SCTLD vs WP 0.9895 1.308e-06
+dev.off()
+```
+
+### Predict Mcav in situ samples 
+
+Once the model was generated, the M.cavernosa samples from in situ were put into a second X data frame, which includes their gene counts and their known disease classification (SCTLD). As 10 components were used to build this model, all 10 were used to classify at each component for each sample. The table with the classification and known disease are listed below. 
+
+```{r, eval=FALSE}
+# Prediction of Mcav Field Proof of Concept 
+X.1 <- (t(gene_counts))
+X.1 <- as.data.frame(X.1)
+rownames(X.1)
+X.1 <- X.1 [c(35:42), ]
+metadata1 <- metadata[c(35:42),]
+gene.test.coral = X.1
+Y.test.SCTLD = metadata1$Disease
+
+pred = predict(coral.plsda.all.biomarkers, newdata = gene.test.coral)
+
+data.frame(Truth = Y.test.SCTLD, prediction = pred$class$max.dist)
+
+plotIndiv(coral.plsda.all.biomarkers, comp = 1:2, 
+          rep.space = "X-variate",
+          style="graphics",
+          group = metadata_diseased$Disease,
+          legend = TRUE, 
+          title = 'PLS-DA Prediction of Mcav Field Samples',
+          ind.names = metadata_diseased$Species,
+          col = c('#5ab4ac','#d8b365'))
+
+points(pred$variates[, 1], 
+       pred$variates[, 2], 
+       pch = 19, cex = 1.2)
+text(pred$variates[, 1], 
+     pred$variates[, 2], 
+     c("M_149","M_156","M_292","M_293","M_297","M_302","M_304","M_312"), 
+     pos = 3)
+dev.off()
+
+pdf(file = "PLS-DA_predictive_Mcav_Field.pdf", height = 12, width = 10)
+plotIndiv(coral.plsda.all.biomarkers, comp = 1:2, 
+          rep.space = "X-variate",
+          style="graphics",
+          group = metadata_diseased$Disease,
+          legend = TRUE, 
+          title = 'PLS-DA Prediction of Mcav Field Samples',
+          ind.names = metadata_diseased$Species,
+          col = c('#5ab4ac','#d8b365'))
+points(pred$variates[, 1], 
+       pred$variates[, 2], 
+       pch = 19, cex = 1.2)
+text(pred$variates[, 1], 
+     pred$variates[, 2], 
+     c("M_149","M_156","M_292","M_293","M_297","M_302","M_304","M_312"), 
+     pos = 3)
+dev.off()
+```
+
+Sample | Truth | prediction.comp1 | prediction.comp2 | prediction.comp3 | prediction.comp4 | prediction.comp5 | prediction.comp6 | prediction.comp7 | prediction.comp8 | prediction.comp9 | prediction.comp10 
+--- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---
+M_149 | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD
+M_156 | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD
+M_292 | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD
+M_293 | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD
+M_297 | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD
+M_302 | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD
+M_304 | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD
+M_312 | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD
+
+### Predict O. faveolata in situ samples 
+
+Once the model was generated, the O.faveolata samples from in situ were put into a second X data frame, which includes their gene counts and their known disease classification (SCTLD). As 10 components were used to build this model, all 10 were used to classify at each component for each sample. The table with the classification and known disease are listed below. 
+
+```{r, eval=FALSE}
+# Prediction of Ofav Field Proof of Concept 
+X.1 <- (t(gene_counts))
+X.1 <- as.data.frame(X.1)
+rownames(X.1)
+X.1 <- X.1 [c(43:44), ]
+metadata1 <- metadata[c(43:44),]
+gene.test.coral = X.1
+Y.test.WP = metadata1$Disease
+
+pred = predict(coral.plsda.all.biomarkers, newdata = gene.test.coral)
+
+data.frame(Truth = Y.test.WP, prediction = pred$class$max.dist)
+
+plotIndiv(coral.plsda.all.biomarkers, comp = 1:2, 
+          rep.space = "X-variate",
+          style="graphics",
+          group = metadata_diseased$Disease,
+          legend = TRUE, 
+          title = 'PLS-DA Prediction of Ofav Field Samples',
+          ind.names = metadata_diseased$Species,
+          col = c('#5ab4ac','#d8b365'))
+
+points(pred$variates[, 1], 
+       pred$variates[, 2], 
+       pch = 19, cex = 1.2)
+text(pred$variates[, 1], 
+     pred$variates[, 2], 
+     c("ofav.1", "ofav.2"), 
+     pos = 3)
+dev.off()
+
+pdf(file = "PLS-DA_predictive_Ofav_Field.pdf", height = 12, width = 10)
+plotIndiv(coral.plsda.all.biomarkers, comp = 1:2, 
+          rep.space = "X-variate",
+          style="graphics",
+          group = metadata_diseased$Disease,
+          legend = TRUE, 
+          title = 'PLS-DA Prediction of Ofav Field Samples',
+          ind.names = metadata_diseased$Species,
+          col = c('#5ab4ac','#d8b365'))
+points(pred$variates[, 1], 
+       pred$variates[, 2], 
+       pch = 19, cex = 1.2)
+text(pred$variates[, 1], 
+     pred$variates[, 2], 
+     c("ofav.1", "ofav.2"), 
+     pos = 3)
+dev.off()
+```
+
+Sample | Truth | prediction.comp1 | prediction.comp2 | prediction.comp3 | prediction.comp4 | prediction.comp5 | prediction.comp6 | prediction.comp7 |  prediction.comp8 | prediction.comp9 | prediction.comp10 
+--- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---
+Mfav_DD_1 | WP | WP | WP | WP | WP | WP | WP | WP | WP | WP | WP | WP 
+Mfav_DD_31 | WP | WP | WP | WP | WP | WP | WP | WP | WP | WP | WP | WP 
+### Predict all in situ samples 
+
+Once the model was generated, the M.cavernosa and O.faveolata samples from in situ were put into a second X data frame, which includes their gene counts and their known disease classification (SCTLD). As 10 components were used to build this model, all 10 were used to classify at each component for each sample. The table with the classification and known disease are listed below. 
+
+```{r, eval=FALSE}
+# Prediction of Field Proof of Concept 
+X.1 <- (t(gene_counts))
+X.1 <- as.data.frame(X.1)
+rownames(X.1)
+X.1 <- X.1 [c(35:44), ]
+metadata1 <- metadata[c(35:44),]
+gene.test.coral = X.1
+Y.test.all = metadata1$Disease
+
+pred = predict(coral.plsda.all.biomarkers, newdata = gene.test.coral)
+
+data.frame(Truth = Y.test.all, prediction = pred$class$max.dist)
+# Truth prediction.comp1 prediction.comp2 prediction.comp3 prediction.comp4 prediction.comp5 prediction.comp6
+# M_149      SCTLD            SCTLD            SCTLD            SCTLD            SCTLD            SCTLD            SCTLD
+# M_156      SCTLD            SCTLD            SCTLD            SCTLD            SCTLD            SCTLD            SCTLD
+# M_292      SCTLD            SCTLD            SCTLD            SCTLD            SCTLD            SCTLD            SCTLD
+# M_293      SCTLD            SCTLD            SCTLD            SCTLD            SCTLD            SCTLD            SCTLD
+# M_297      SCTLD            SCTLD            SCTLD            SCTLD            SCTLD            SCTLD            SCTLD
+# M_302      SCTLD            SCTLD            SCTLD            SCTLD            SCTLD            SCTLD            SCTLD
+# M_304      SCTLD            SCTLD            SCTLD            SCTLD            SCTLD            SCTLD            SCTLD
+# M_312      SCTLD            SCTLD            SCTLD            SCTLD            SCTLD            SCTLD            SCTLD
+# Mfav_DD_1     WP               WP               WP               WP               WP               WP               WP
+# Mfav_DD_31    WP               WP               WP               WP               WP               WP               WP
+# prediction.comp7 prediction.comp8 prediction.comp9 prediction.comp10
+# M_149                 SCTLD            SCTLD            SCTLD             SCTLD
+# M_156                 SCTLD            SCTLD            SCTLD             SCTLD
+# M_292                 SCTLD            SCTLD            SCTLD             SCTLD
+# M_293                 SCTLD            SCTLD            SCTLD             SCTLD
+# M_297                 SCTLD            SCTLD            SCTLD             SCTLD
+# M_302                 SCTLD            SCTLD            SCTLD             SCTLD
+# M_304                 SCTLD            SCTLD            SCTLD             SCTLD
+# M_312                 SCTLD            SCTLD            SCTLD             SCTLD
+# Mfav_DD_1                WP               WP               WP                WP
+# Mfav_DD_31               WP               WP               WP                WP
+
+plotIndiv(coral.plsda.all.biomarkers, comp = 1:2, 
+          rep.space = "X-variate",
+          style="graphics",
+          group = metadata_diseased$Disease,
+          legend = TRUE, 
+          title = 'PLS-DA Prediction of Field Samples',
+          ind.names = metadata_diseased$Species,
+          col = c('#5ab4ac','#d8b365'))
+
+points(pred$variates[, 1], 
+       pred$variates[, 2], 
+       pch = 19, cex = 1.2)
+text(pred$variates[, 1], 
+     pred$variates[, 2], 
+     c("M_149","M_156","M_292","M293","M_302","M_304","M_312","Mfav_DD_1","Mfav_DD_31"), 
+     pos = 3)
+dev.off()
+
+pdf(file = "PLS-DA_predictive_Field.pdf", height = 12, width = 10)
+plotIndiv(coral.plsda.all.biomarkers, comp = 1:2, 
+          rep.space = "X-variate",
+          style="graphics",
+          group = metadata_diseased$Disease,
+          legend = TRUE, 
+          title = 'PLS-DA Prediction of Field Samples',
+          ind.names = metadata_diseased$Species,
+          col = c('#5ab4ac','#d8b365'))
+points(pred$variates[, 1], 
+       pred$variates[, 2], 
+       pch = 19, cex = 1.2)
+text(pred$variates[, 1], 
+     pred$variates[, 2], 
+     c("MCAV_SCTLD", "MCAV_SCTLD","MCAV_SCTLD","MCAV_SCTLD","MCAV_SCTLD","MCAV_SCTLD","MCAV_SCTLD","OFAV_WP","OFAV_WP"), 
+     pos = 3)
+dev.off()
+```
+
+Sample | Truth | prediction.comp1 | prediction.comp2 | prediction.comp3 | prediction.comp4 | prediction.comp5 | prediction.comp6 | prediction.comp7 |  prediction.comp8 | prediction.comp9 | prediction.comp10 
+--- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---
+M_149 | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD
+M_156 | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD
+M_292 | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD
+M_293 | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD
+M_297 | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD
+M_302 | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD
+M_304 | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD
+M_312 | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD | SCTLD
+Mfav_DD_1 | WP | WP | WP | WP | WP | WP | WP | WP | WP | WP | WP | WP 
+Mfav_DD_31 | WP | WP | WP | WP | WP | WP | WP | WP | WP | WP | WP | WP 
+#### Save Data 
+
+```{r, eval=FALSE}
+ls() 
+# [1] "auc.plsda"                  "background"                 "biomarkers"                
+# [4] "coral.plsda.all.biomarkers" "gene_counts"                "gene.test.coral"           
+# [7] "metadata"                   "metadata_diseased"          "metadata1"                 
+# [10] "perf.plsda.coral.all"       "pred"                       "testing_genes"             
+# [13] "X"                          "X.1"                        "Y"                         
+# [16] "Y.test.all"                 "Y.test.SCTLD"               "Y.test.WP" 
+
+save(auc.plsda, background, biomarkers, coral.plsda.all.biomarkers, gene_counts, 
+      gene.test.coral, metadata, metadata_diseased, metadata1, perf.plsda.coral.all, 
+      pred, testing_genes, X, X.1, Y, Y.test.all, Y.test.SCTLD, Y.test.WP, file = "PLSDA_testing.RData")
+```
+
+#### Session Info
+
+```{r, eval=FALSE}
+sessionInfo()
+# R version 4.2.0 (2022-04-22)
+# Platform: x86_64-apple-darwin17.0 (64-bit)
+# Running under: macOS 14.2.1
+# 
+# Matrix products: default
+# LAPACK: /Library/Frameworks/R.framework/Versions/4.2/Resources/lib/libRlapack.dylib
+# 
+# locale:
+#   [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+# 
+# attached base packages:
+#   [1] stats4    stats     graphics  grDevices utils     datasets  methods   base     
+# 
+# other attached packages:
+#   [1] sva_3.44.0                  BiocParallel_1.30.4         genefilter_1.78.0          
+# [4] mgcv_1.9-0                  nlme_3.1-163                DESeq2_1.36.0              
+# [7] SummarizedExperiment_1.26.1 Biobase_2.56.0              MatrixGenerics_1.8.1       
+# [10] matrixStats_1.0.0           GenomicRanges_1.48.0        GenomeInfoDb_1.32.4        
+# [13] IRanges_2.30.1              S4Vectors_0.34.0            BiocGenerics_0.42.0        
+# [16] ggalt_0.4.0                 PCAtools_2.8.0              ggrepel_0.9.4              
+# [19] mixOmics_6.20.0             ggplot2_3.4.4               lattice_0.22-5             
+# [22] MASS_7.3-60                 dplyr_1.1.3                 tidyr_1.3.0                
+# [25] readr_2.1.4                
+# 
+# loaded via a namespace (and not attached):
+#   [1] colorspace_2.1-0          corpcor_1.6.10            XVector_0.36.0           
+# [4] rstudioapi_0.15.0         farver_2.1.1              bit64_4.0.5              
+# [7] AnnotationDbi_1.58.0      RSpectra_0.16-1           fansi_1.0.5              
+# [10] codetools_0.2-19          splines_4.2.0             sparseMatrixStats_1.8.0  
+# [13] extrafont_0.19            cachem_1.0.8              geneplotter_1.74.0       
+# [16] knitr_1.40                Rttf2pt1_1.3.12           annotate_1.74.0          
+# [19] png_0.1-8                 compiler_4.2.0            httr_1.4.7               
+# [22] dqrng_0.3.1               Matrix_1.5-1              fastmap_1.1.1            
+# [25] limma_3.52.4              cli_3.6.1                 BiocSingular_1.12.0      
+# [28] htmltools_0.5.7           tools_4.2.0               rsvd_1.0.5               
+# [31] igraph_1.5.1              gtable_0.3.4              glue_1.6.2               
+# [34] GenomeInfoDbData_1.2.8    reshape2_1.4.4            maps_3.4.1.1             
+# [37] Rcpp_1.0.11               vctrs_0.6.4               Biostrings_2.64.1        
+# [40] extrafontdb_1.0           DelayedMatrixStats_1.18.2 xfun_0.34                
+# [43] stringr_1.5.0             beachmat_2.12.0           lifecycle_1.0.3          
+# [46] irlba_2.3.5.1             XML_3.99-0.12             edgeR_3.38.4             
+# [49] zlibbioc_1.42.0           scales_1.2.1              hms_1.1.3                
+# [52] parallel_4.2.0            proj4_1.0-13              RColorBrewer_1.1-3       
+# [55] yaml_2.3.7                memoise_2.0.1             gridExtra_2.3            
+# [58] stringi_1.7.12            RSQLite_2.2.18            ScaledMatrix_1.4.1       
+# [61] rlang_1.1.2               pkgconfig_2.0.3           bitops_1.0-7             
+# [64] evaluate_0.23             purrr_1.0.2               labeling_0.4.3           
+# [67] cowplot_1.1.1             bit_4.0.5                 tidyselect_1.2.0         
+# [70] plyr_1.8.9                magrittr_2.0.3            R6_2.5.1                 
+# [73] generics_0.1.3            DelayedArray_0.22.0       DBI_1.1.3                
+# [76] pillar_1.9.0              withr_2.5.0               survival_3.5-7           
+# [79] KEGGREST_1.36.3           RCurl_1.98-1.9            ash_1.0-15               
+# [82] tibble_3.2.1              crayon_1.5.2              rARPACK_0.11-0           
+# [85] KernSmooth_2.23-22        utf8_1.2.2                ellipse_0.5.0            
+# [88] tzdb_0.4.0                rmarkdown_2.25            locfit_1.5-9.8           
+# [91] grid_4.2.0                blob_1.2.4                digest_0.6.33            
+# [94] xtable_1.8-4              munsell_0.5.0    
+```

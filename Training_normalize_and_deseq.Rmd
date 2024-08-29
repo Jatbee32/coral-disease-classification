@@ -1,0 +1,305 @@
+---
+title: "Training Normalized Counts and DESeq"
+author: "Emily Van Buren"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Set Up Working Directory 
+
+In this step we will set up the working directory with the necessary packages and the metadata and countdata files. 
+```{r,eval=FALSE}
+# load packages 
+library(readr)
+library(tidyr)
+library(dplyr)
+library(mixOmics)
+library(ggrepel)
+library(PCAtools)
+library("ggalt")
+library(DESeq2)
+library(sva)
+
+# set working directory 
+setwd("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/Normalization_DESeq/")
+
+metadata <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/counts/metadata_diseased.csv", row.names = "Sample"))
+metadata_diseased <- metadata %>% filter(metadata$Training_Testing == c("Training"))
+metadata_diseased$Training_Testing
+
+countData <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/counts/gene_counts_diseased_raw.csv", row.names = "Entry"))
+```
+
+# Variance Stabilizing Transformation - Normalization 
+
+Due to the 34 samples being used for training, we will be normalizing with variance stabilizing transformation. This normalization is performed using DESeq2, with the design = ~ Species + Disease. This will test for disease, while keeping in mind the variation that will be in the gene count matrix due to phylogeny. 
+
+```{r,eval=FALSE}
+# Variance Stabilizing Transformation - Normalization
+countData
+colData <- metadata_diseased
+
+row.names(colData) == colnames(countData)
+
+
+dds <- DESeqDataSetFromMatrix(countData = round(countData),
+                              colData = colData,
+                              design = ~ Species + Disease)
+# converting counts to integer mode
+# Warning message:
+#   In DESeqDataSet(se, design = design, ignoreRank) :
+#   some variables in design formula are characters, converting to factors
+
+dds <- dds[ rowMeans(counts(dds)) > 10, ] 
+vst <- vst(dds, blind=FALSE) 
+vstCounts <- assay(vst)
+write.csv(vstCounts, file = "normalized_counts_vstCounts_Diseased.csv") # dont forget to add entry!
+```
+
+# DESeq model 
+
+In this step we will perform differential expression analysis. In this model, the mean-dispersion relationship did not have a dispersion trend captured by standard parametric fit. Instead a  local regression fit was automatically substituted. 
+
+To identify the DEGs relevant to disease, we obtained the results using a contrast (contrast = c("Disease","SCTLD","WP")), with SCTLD input as the treatment and WP as the control. This allows us arbitrarily determine LFC counts to anything > 0 being associated SCTLD and anything < 0 to be associated with WP. DEGs were then filtered by padj < 0.05. 
+
+Ensuring consistency across phylogeny, uniprot IDs present in four or more transcriptomes of the seven species were kept. 
+
+```{r, eval=FALSE}
+# DESeq model 
+dds <- DESeq(dds)
+# estimating size factors
+# estimating dispersions
+# gene-wise dispersion estimates
+# mean-dispersion relationship
+# -- note: fitType='parametric', but the dispersion trend was not well captured by the
+# function: y = a/x + b, and a local regression fit was automatically substituted.
+# specify fitType='local' or 'mean' to avoid this message next time.
+# final dispersion estimates
+# fitting model and testing
+resultsNames(dds)
+# [1] "Intercept"            "Species_MCAV_vs_CNAT" "Species_OANN_vs_CNAT"
+# [4] "Species_OFAV_vs_CNAT" "Species_PAST_vs_CNAT" "Species_PSTR_vs_CNAT"
+# [7] "Species_SSID_vs_CNAT" "Disease_WP_vs_SCTLD" 
+res_disease <- results(dds, contrast = c("Disease","SCTLD","WP"))
+resordered_disease <- as.data.frame(res_disease[order(res_disease$padj),])
+disease_DEGs <- resordered_disease %>% filter(padj < 0.05)
+# 505 DEGs identified between WP and SCTLD 
+write.csv(disease_DEGs, file = "disease_sig_DEGs.csv")
+```
+
+## Annotation and Filtering of DEGs 
+
+DEGs were then annotated with uniprot 
+```{r, eval=FALSE}
+uniprot <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations/uniprot_7species_reviewed_yes.csv")
+disease_DEGs$Entry <- rownames(disease_DEGs)
+sig_master <- merge(disease_DEGs,uniprot, by="Entry")
+logs <- read.csv("normalized_counts_vstCounts_Diseased.csv")
+sig_master <- merge(sig_master,logs, by="Entry")
+write.csv(sig_master, file = "disease_annotated_sig_DEGs.csv")
+
+PA <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations/PA_7sp.csv"))
+
+# output DEGs 
+DEGs <- sig_master[,c(1,3,7,9)] # obtain Entry ID, log2FoldChange, padj, and Protein names
+DEGs$Protein.names <- gsub("\\s*\\([^\\)]+\\)","",as.character(DEGs$Protein.names))
+
+upReg <- subset(sig_master, log2FoldChange > 0)
+upReg <- merge(upReg,PA,by = "Entry")
+upReg <- upReg[,-c(53:59)]
+nrow(upReg[upReg$Total>3, ])
+# [1] 152
+
+upReg_4 <- upReg %>% filter(upReg$Total > 3)
+
+downReg <- subset(sig_master, log2FoldChange < 0)
+downReg <- merge(downReg,PA,by = "Entry")
+downReg <- downReg[,-c(53:59)]
+nrow(downReg[downReg$Total>3, ])
+# [1] 152
+
+downReg_4 <- downReg %>% filter(downReg$Total > 3)
+
+summary(res_disease)
+# out of 18597 with nonzero total read count
+# adjusted p-value < 0.1
+# LFC > 0 (up)       : 368, 2%
+# LFC < 0 (down)     : 327, 1.8%
+# outliers [1]       : 35, 0.19%
+# low counts [2]     : 0, 0%
+# (mean count < 4)
+# [1] see 'cooksCutoff' argument of ?results
+# [2] see 'independentFiltering' argument of ?results
+
+upReg <- upReg[order(upReg$log2FoldChange, decreasing = TRUE), ]
+head(upReg)
+upReg_4 <- upReg_4[order(upReg_4$log2FoldChange, decreasing = TRUE), ]
+head(upReg_4)
+write.csv(upReg_4, file = "upReg_4sp.csv")
+
+downReg <- downReg[order(downReg$log2FoldChange), ]
+head(downReg)
+downReg_4 <- downReg_4[order(downReg_4$log2FoldChange), ]
+head(downReg_4)
+write.csv(downReg_4, file = "downReg_4sp.csv")
+```
+
+### Heatmaps of top up/down regulated genes
+```{r, eval=FALSE}
+# heatmap of top 10 up regulated genes 
+library(pheatmap)
+X <- as.data.frame(read.csv("normalized_counts_vstCounts_Diseased.csv", row.names = "Entry")) 
+testing_genes <- as.vector(upReg_4$Entry[1:10])
+mat  <- X[testing_genes, ]
+mat  <- mat - rowMeans(mat)
+
+anno <- metadata_diseased
+colnames(anno)
+anno <- anno[,c(5,7)]
+colnames(anno) <- c("Disease", "Species")
+
+pdf(file = "heatmap_top_10_up_v1.pdf", height = 8, width = 8)
+pheatmap(mat,
+         scale = "row",
+         annotation_col = anno,
+         color = colorRampPalette(c("#2166ac","white","#b2182b"))(200),
+         legend = TRUE,
+         legend_labels = anno,
+         #cutree_rows = 4,
+         #cutree_cols = 2,
+         cluster_cols = TRUE,
+         cluster_rows = TRUE,
+         fontsize_row = 7,
+         fontsize_col = 8,
+         cellwidth = 8,
+         cellheight = 10,
+         treeheight_row = 3,
+         treeheight_col = 40
+)
+dev.off()
+
+# heatmap of top 10 down regulated genes 
+testing_genes <- as.vector(downReg_4$Entry[1:10])
+mat  <- X[testing_genes, ]
+mat  <- mat - rowMeans(mat)
+
+anno <- metadata_diseased
+colnames(anno)
+anno <- anno[,c(2,4)]
+colnames(anno) <- c("Disease", "Host")
+
+pdf(file = "heatmap_top_10_down_v1.pdf", height = 8, width = 8)
+pheatmap(mat,
+         scale = "row",
+         annotation_col = anno,
+         color = colorRampPalette(c("#2166ac","white","#b2182b"))(200),
+         legend = TRUE,
+         legend_labels = anno,
+         #cutree_rows = 4,
+         #cutree_cols = 2,
+         cluster_cols = TRUE,
+         cluster_rows = TRUE,
+         fontsize_row = 7,
+         fontsize_col = 8,
+         cellwidth = 8,
+         cellheight = 10,
+         treeheight_row = 3,
+         treeheight_col = 40
+)
+dev.off()
+```
+
+### Save Data 
+```{r,eval=FALSE}
+ls()
+save(colData, countData, dds, DEGs, downReg, downReg_4, disease_DEGs, logs, metadata, 
+     metadata_diseased, res_disease, resordered_disease, sig_master, upReg, upReg_4,
+     vst, vstCounts, file = "DESeq_SCTLDvsWP.RData")
+```
+
+#### Session Info
+```{r, eval=FALSE}
+sessionInfo()
+# R version 4.2.0 (2022-04-22)
+# Platform: x86_64-apple-darwin17.0 (64-bit)
+# Running under: macOS Catalina 10.15.7
+# 
+# Matrix products: default
+# BLAS:   /System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/vecLib.framework/Versions/A/libBLAS.dylib
+# LAPACK: /Library/Frameworks/R.framework/Versions/4.2/Resources/lib/libRlapack.dylib
+# 
+# locale:
+#   [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+# 
+# attached base packages:
+#   [1] stats4    stats     graphics  grDevices utils     datasets  methods  
+# [8] base     
+# 
+# other attached packages:
+#   [1] pheatmap_1.0.12             mixOmics_6.20.0            
+# [3] lattice_0.22-5              MASS_7.3-60                
+# [5] sva_3.44.0                  BiocParallel_1.30.4        
+# [7] genefilter_1.78.0           mgcv_1.9-0                 
+# [9] nlme_3.1-163                DESeq2_1.36.0              
+# [11] SummarizedExperiment_1.26.1 Biobase_2.56.0             
+# [13] MatrixGenerics_1.8.1        matrixStats_1.0.0          
+# [15] GenomicRanges_1.48.0        GenomeInfoDb_1.32.4        
+# [17] IRanges_2.30.1              S4Vectors_0.34.0           
+# [19] BiocGenerics_0.42.0         ggalt_0.4.0                
+# [21] PCAtools_2.8.0              ggrepel_0.9.4              
+# [23] tximport_1.24.0             tximportData_1.24.0        
+# [25] lubridate_1.9.3             forcats_1.0.0              
+# [27] stringr_1.5.0               dplyr_1.1.3                
+# [29] purrr_1.0.2                 readr_2.1.4                
+# [31] tidyr_1.3.0                 tibble_3.2.1               
+# [33] ggplot2_3.4.4               tidyverse_2.0.0            
+# 
+# loaded via a namespace (and not attached):
+#   [1] colorspace_2.1-0          corpcor_1.6.10           
+# [3] XVector_0.36.0            rstudioapi_0.15.0        
+# [5] farver_2.1.1              bit64_4.0.5              
+# [7] RSpectra_0.16-1           AnnotationDbi_1.58.0     
+# [9] fansi_1.0.5               codetools_0.2-19         
+# [11] splines_4.2.0             sparseMatrixStats_1.8.0  
+# [13] extrafont_0.19            cachem_1.0.8             
+# [15] geneplotter_1.74.0        knitr_1.40               
+# [17] jsonlite_1.8.7            Rttf2pt1_1.3.12          
+# [19] annotate_1.74.0           png_0.1-8                
+# [21] compiler_4.2.0            httr_1.4.7               
+# [23] dqrng_0.3.1               Matrix_1.5-1             
+# [25] fastmap_1.1.1             limma_3.52.4             
+# [27] cli_3.6.1                 BiocSingular_1.12.0      
+# [29] htmltools_0.5.7           tools_4.2.0              
+# [31] igraph_1.5.1              rsvd_1.0.5               
+# [33] gtable_0.3.4              glue_1.6.2               
+# [35] GenomeInfoDbData_1.2.8    reshape2_1.4.4           
+# [37] maps_3.4.1.1              Rcpp_1.0.11              
+# [39] vctrs_0.6.4               Biostrings_2.64.1        
+# [41] extrafontdb_1.0           DelayedMatrixStats_1.18.2
+# [43] xfun_0.34                 beachmat_2.12.0          
+# [45] timechange_0.2.0          lifecycle_1.0.3          
+# [47] irlba_2.3.5.1             XML_3.99-0.12            
+# [49] edgeR_3.38.4              zlibbioc_1.42.0          
+# [51] scales_1.2.1              vroom_1.6.4              
+# [53] hms_1.1.3                 parallel_4.2.0           
+# [55] proj4_1.0-13              RColorBrewer_1.1-3       
+# [57] yaml_2.3.7                gridExtra_2.3            
+# [59] memoise_2.0.1             stringi_1.7.12           
+# [61] RSQLite_2.2.18            ScaledMatrix_1.4.1       
+# [63] rlang_1.1.2               pkgconfig_2.0.3          
+# [65] bitops_1.0-7              evaluate_0.23            
+# [67] cowplot_1.1.1             bit_4.0.5                
+# [69] tidyselect_1.2.0          plyr_1.8.9               
+# [71] magrittr_2.0.3            R6_2.5.1                 
+# [73] generics_0.1.3            DelayedArray_0.22.0      
+# [75] DBI_1.1.3                 pillar_1.9.0             
+# [77] withr_2.5.0               survival_3.5-7           
+# [79] KEGGREST_1.36.3           RCurl_1.98-1.9           
+# [81] ash_1.0-15                crayon_1.5.2             
+# [83] rARPACK_0.11-0            KernSmooth_2.23-22       
+# [85] utf8_1.2.2                ellipse_0.5.0            
+# [87] tzdb_0.4.0                rmarkdown_2.25           
+# [89] locfit_1.5-9.8            grid_4.2.0               
+# [91] blob_1.2.4                digest_0.6.33            
+# [93] xtable_1.8-4              munsell_0.5.0    
+```

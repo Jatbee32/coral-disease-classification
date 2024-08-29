@@ -1,0 +1,973 @@
+---
+title: "Potential_biomarkers"
+author: "Emily Van Buren"
+date: "`r Sys.Date()`"
+output: html_document
+---
+# Obtain finalized biomarkers
+
+In this file, we will be isolate biologically meaningful biomarkers from the differential expression analysis and logistic regression runs. We will be taking the filtered results from these two analyses, remove any algal symbiont contaminants, and determine a finalized list of biomarkers. 
+
+After obtaining the finalized biomarkers, we will run several training algorithms to determine both biological significance and statistical significance. We will run PLS-DA models on the training data in 4 different gene datasets; 1) all genes expressed & normalized, 2) differential expressed genes only, 3) logistic regression genes only, and finally 4) finalized biomarker list. 
+
+# Venn Diagram of Overlapping Genes from Each Analysis Run 
+
+## Obtain all genes with most signficance/vairance in each algorithm 
+
+Outputs from differential expression analysis and logistic regression are loaded into the environment. 
+```{r, echo=TRUE}
+library(ggvenn)
+library(ggplot2)
+
+setwd("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/potential_biomarkers")
+WP_LG <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/LG/W"))
+SCTLD_LG <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/LG/SCTLD_unique_biomarkers_annot.csv"))
+LG_all <- full_join(WP_LG,SCTLD_LG)
+DEGs_up <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/Normalization_DESeq/upReg_4sp.csv"))
+DEGs_down <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/Normalization_DESeq/downReg_4sp.csv"))
+DEGs_all <- full_join(DEGs_up,DEGs_down)
+```
+
+## Isolation of Intersect/Unique Genes in Venn Diagram
+
+When creating venn diagrams we may want to isolate unique or overlapping genes between the analyses. These functions; Intersect, Union and Setdiff, will provide 3 functions that can look at these overlaps or unique values in each aspect of the venn diagram. 
+
+```{r, eval=FALSE}
+## Isolation of Intersect/Unique Genes in Venn Diagram
+
+Intersect <- function (x) {  
+  # Multiple set version of intersect
+  # x is a list
+  if (length(x) == 1) {
+    unlist(x)
+  } else if (length(x) == 2) {
+    intersect(x[[1]], x[[2]])
+  } else if (length(x) > 2){
+    intersect(x[[1]], Intersect(x[-1]))
+  }
+}
+
+Union <- function (x) {  
+  # Multiple set version of union
+  # x is a list
+  if (length(x) == 1) {
+    unlist(x)
+  } else if (length(x) == 2) {
+    union(x[[1]], x[[2]])
+  } else if (length(x) > 2) {
+    union(x[[1]], Union(x[-1]))
+  }
+}
+
+Setdiff <- function (x, y) {
+  # Remove the union of the y's from the common x's. 
+  # x and y are lists of characters.
+  xx <- Intersect(x)
+  yy <- Union(y)
+  setdiff(xx, yy)
+}
+```
+
+## WP Biomarkers 
+
+First we will look at biomarkers assigned to white plague from differential expression analysis and logistic regression models. A total of 198 genes potential biomarkers for white plague. There are two genes, Q0PAS0 and Q5ZKN1, that are overlapped between the two analyses. 
+
+```{r, eval=FALSE}
+# WP biomarkers 
+
+WP_biomarkers <- list(
+  WP_LG = WP_LG$Entry,
+  DEGs = DEGs_down$Entry
+)
+
+# Venn Diagram 
+ggvenn(
+  WP_biomarkers,
+  fill_color = c("#FFF7BC", "#A1DAB4"),
+  stroke_size = 0.5, set_name_size = 5
+)
+
+pdf(file = "WP_biomarkers_potential.pdf",height=6,width = 6)
+ggvenn(
+  WP_biomarkers,
+  fill_color = c("#FFF7BC", "#A1DAB4"),
+  stroke_size = 0.5, set_name_size = 5
+)
+dev.off()
+
+# Isolate interesting overlaps 
+DEG_LG_WP <- Intersect(WP_biomarkers[c("WP_LG", "DEGs")])
+DEG_LG_WP
+# [1] "Q0PAS0" "Q5ZKN1"
+```
+
+## SCTLD Biomarkers 
+
+Now we will look at biomarkers assigned to SCTLD from differential expression analysis and logistic regression models. A total of 309 genes potential biomarkers for white plague. There are two genes, A0MQA3 and Q03001, that are overlapped between the two analyses. 
+
+```{r, eval=FALSE}
+# SCTLD biomarkers 
+
+SCTLD_biomarkers <- list(
+  SCTLD_LG = SCTLD_LG$Entry,
+  DEGs = DEGs_up$Entry
+)
+
+# Venn Diagram 
+ggvenn(
+  SCTLD_biomarkers,
+  fill_color = c("#FFF7BC", "#A1DAB4"),
+  stroke_size = 0.5, set_name_size = 5
+)
+dev.off()
+
+pdf(file = "SCTLD_biomarkersp_potential.pdf",height=6,width = 6)
+ggvenn(
+  SCTLD_biomarkers,
+  fill_color = c("#FFF7BC", "#A1DAB4"),
+  stroke_size = 0.5, set_name_size = 5
+)
+dev.off()
+
+# Isolate interesting overlaps 
+DEG_LG_SCTLD <- Intersect(SCTLD_biomarkers[c("SCTLD_LG", "DEGs")])
+DEG_LG_SCTLD
+# [1] "A0MQA3" "Q03001"
+```
+
+## All biomarkers 
+
+We will now create a large list of all biomarkers identified in the new analyses regardless of disease assignment. There were a total of 485 potential biomarkers identified, with 26 genes overlapping between the two analyses. 
+
+```{r, eval=FALSE}
+All_biomarkers <- list(
+  LG_all = LG_all$Entry,
+  DEGs_all = DEGs_all$Entry
+)
+
+# Venn Diagram 
+ggvenn(
+  All_biomarkers,
+  fill_color = c("#FFF7BC", "#A1DAB4"),
+  stroke_size = 0.5, set_name_size = 5
+)
+dev.off()
+
+pdf(file = "All_potential_biomarkers.pdf",height=6,width = 6)
+ggvenn(
+  All_biomarkers,
+  fill_color = c("#FFF7BC", "#A1DAB4"),
+  stroke_size = 0.5, set_name_size = 5
+)
+dev.off()
+
+# Isolate interesting overlaps 
+DEG_LG_all <- Intersect(All_biomarkers[c("LG_all", "DEGs_all")])
+DEG_LG_all
+# [1] "G3MWR8" "P42700" "Q0PAS0" "Q15061" "Q27802" "Q3TLD5" "Q40300" "Q5M7N9" "Q5ZKN1" "Q9EQU5"
+# [11] "A0MQA3" "B0JZG0" "P21576" "P79134" "Q03001" "Q08CH8" "Q3KR37" "Q5RDC1" "Q5ZJ69" "Q7D513"
+# [21] "Q7SIA2" "Q8CGN4" "Q8LPN7" "Q96DY2" "Q9NY47" "Q9UBV2"
+```
+
+## Create a list of biomarkers 
+
+In excel we went ahead and sorted out potential algal symbionts based on the GO terms: chloroplast [GO:0009507], chloroplast thylakoid membrane [GO:0009535], chloroplast stroma [GO:0009570], and chloroplast membrane [GO:0031969]. This removed 22 genes. It should be noted that transcriptomes for Past (gene model) and Ssid had none of these genes within their transcriptomes. The transcriptomes with most contamination were Ofav and Oann (all 22 present), then mcav and pstr (18 each) and finally cnat (15). This left 463 potential biomarkers from DEGs and LG models. 
+
+```{r eval=FALSE}
+# Obtain all biomarkers 
+biomarkers <- merge(LG_all,DEGs_all,by="Entry",all=TRUE)
+uniprot <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations/uniprot_7species_reviewed_yes.csv", row.names = "Entry")
+PA <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations/PA_7sp.csv"))
+biomarkers <- biomarkers[,c("Entry")]
+biomarkers <- uniprot[c(biomarkers),]
+biomarkers$Entry <- rownames(biomarkers)
+biomarkers <- merge(biomarkers,PA,by="Entry")
+write.csv(biomarkers, file = "potential_biomarkers.csv")
+```
+
+## Create finalized biomarker comparisons 
+
+### Remove algal comtaminants from potential biomarkers 
+
+Here we will filer the 22 algal symbiont contaminants from the lists and generate new finalized lists of WP logisitc regression biomarkers, WP DEG biomarkers, SCTLD logistic regression biomarkers and SCTLD DEG biomarkers. We will use these lists to create finalized venn diagrams. 
+
+```{r, eval=FALSE}
+# remove algal genes 
+
+algal_contaminants <- c("A0T0T0","A2Y8E0","A6MW33","O22870","O48721","O48921","O64730","P11471",
+                        "P51390","P51874","P93664","Q40297","Q40300","Q41093","Q5ENN5","Q8GVP6",
+                        "Q8H0U5","Q8RWM7","Q9CA67","Q9S714","Q9SIP7","Q8L7C9")
+# WP LG 
+rownames(WP_LG) <- WP_LG$Entry
+WP_LG_entries <- WP_LG$Entry
+WP_LG_entries_noalgal <- WP_LG_entries[!(WP_LG_entries %in% algal_contaminants)]
+WP_LG_noalgal <- WP_LG[ WP_LG_entries_noalgal, ]
+write.csv(WP_LG_noalgal, file = "WP_LG_noagal.csv")
+
+# SCTLD LG
+rownames(SCTLD_LG) <- SCTLD_LG$Entry
+SCTLD_LG_entries <- SCTLD_LG$Entry
+SCTLD_LG_entries_noalgal <- SCTLD_LG_entries[!(SCTLD_LG_entries %in% algal_contaminants)]
+SCTLD_LG_noalgal <- SCTLD_LG[ SCTLD_LG_entries_noalgal, ]
+write.csv(SCTLD_LG_noalgal, file = "SCTLD_LG_noagal.csv")
+
+# All LG 
+rownames(LG_all) <- LG_all$Entry
+LG_all_entries <- LG_all$Entry
+LG_all_entries_noalgal <- LG_all_entries[!(LG_all_entries %in% algal_contaminants)]
+LG_all_noalgal <- LG_all[ LG_all_entries_noalgal, ]
+write.csv(LG_all_noalgal, file = "LG_all_noagal.csv")
+
+# DEGs All 
+rownames(DEGs_all) <- DEGs_all$Entry
+DEGs_all_entries <- DEGs_all$Entry
+DEGs_all_entries_noalgal <- DEGs_all_entries[!(DEGs_all_entries %in% algal_contaminants)]
+DEGs_all_noalgal <- DEGs_all[ DEGs_all_entries_noalgal, ]
+write.csv(DEGs_all_noalgal, file = "DEGs_all_noagal.csv")
+
+# DEGs WP (down)
+rownames(DEGs_down) <- DEGs_down$Entry
+DEGs_down_entries <- DEGs_down$Entry
+DEGs_down_entries_noalgal <- DEGs_down_entries[!(DEGs_down_entries %in% algal_contaminants)]
+DEGs_down_noalgal <- DEGs_down[ DEGs_down_entries_noalgal, ]
+write.csv(DEGs_down_noalgal, file = "DEGs_down_noagal.csv")
+
+# DEGs SCTLD (up) 
+rownames(DEGs_up) <- DEGs_up$Entry
+DEGs_up_entries <- DEGs_up$Entry
+DEGs_up_entries_noalgal <- DEGs_up_entries[!(DEGs_up_entries %in% algal_contaminants)]
+DEGs_up_noalgal <- DEGs_up[ DEGs_up_entries_noalgal, ]
+write.csv(DEGs_up_noalgal, file = "DEGs_up_noagal.csv")
+```
+
+We will save these files by disease and all biomarkers which will include presence absence in transcriptomes, and their uniprot annotations. 
+```{r, eval=FALSE}
+# Biomarkers by disease 
+
+uniprot <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations/uniprot_7species_reviewed_yes.csv")
+
+## SCTLD Final 
+# label genes from each study 
+DEGs_up_noalgal$DEG <-ifelse(DEGs_up_noalgal$baseMean=="NA",0,1) 
+DEGs_up_noalgal_v2 <- DEGs_up_noalgal[,c("Entry","DEG")]
+
+SCTLD_LG_noalgal$LG_gene <- ifelse(SCTLD_LG_noalgal$X=="NA",0,1)
+SCTLD_LG_noalgal_v2 <- SCTLD_LG_noalgal[,c("Entry","LG_gene")]
+
+# obtain PA and uniprot IDs
+SCTLD_all_final <- merge(DEGs_up_noalgal_v2,SCTLD_LG_noalgal_v2, by = "Entry", all = TRUE)
+SCTLD_all_final <- merge(SCTLD_all_final,PA,by="Entry")
+SCTLD_all_final <- merge(SCTLD_all_final,uniprot,by="Entry")
+
+# save file 
+write.csv(SCTLD_all_final, file = "SCTLD_bmkrs_noagal.csv")
+
+## WP final 
+
+# label genes from each study 
+DEGs_down_noalgal$DEG <-ifelse(DEGs_down_noalgal$baseMean=="NA",0,1) 
+DEGs_down_noalgal_v2 <- DEGs_down_noalgal[,c("Entry","DEG")]
+
+WP_LG_noalgal$LG_gene <- ifelse(WP_LG_noalgal$X=="NA",0,1)
+WP_LG_noalgal_v2 <- WP_LG_noalgal[,c("Entry","LG_gene")]
+
+# obtain PA and uniprot IDs
+WP_all_final <- merge(DEGs_down_noalgal_v2,WP_LG_noalgal_v2, by = "Entry", all = TRUE)
+WP_all_final <- merge(WP_all_final,PA,by="Entry")
+WP_all_final <- merge(WP_all_final,uniprot,by="Entry")
+
+# save file 
+write.csv(WP_all_final, file = "WP_bmkrs_noagal.csv")
+
+## All biomarkers final  
+
+# label genes from each study 
+WP_all_final$WP_bmkr <-ifelse(WP_all_final$Entry=="NA",0,1)
+WP_all_final <- WP_all_final[,c("Entry","DEG","LG_gene","WP_bmkr")]
+SCTLD_all_final$SCTLD_bmkr <-ifelse(SCTLD_all_final$Entry=="NA",0,1)
+SCTLD_all_final <- SCTLD_all_final[,c("Entry","DEG","LG_gene","SCTLD_bmkr")]
+
+biomarkers_all_noalgal <- merge(SCTLD_all_final,WP_all_final,by ="Entry", all=TRUE)
+biomarkers_all_noalgal <- merge(biomarkers_all_noalgal,PA,by="Entry")
+biomarkers_all_noalgal <- merge(biomarkers_all_noalgal,uniprot,by="Entry")
+biomarkers_all_noalgal[is.na(biomarkers_all_noalgal)] = 0
+
+write.csv(biomarkers_all_noalgal, file = "biomarker_list_noalgal.csv")
+```
+
+### Venn Diagrams 
+
+A total of 463 biomarkers were visualized by difference between WP and SCTLD biomarkers from all studies and ones unique to logistic regression or differential expression analysis. 
+
+#### All Biomarkers 
+
+A total of 463 biomarkers were visualized with 167 being unique to WP, 275 being unique to SCTLD and 21 genes overlapping between the two diseases. These overlaps have inverse relationships between the studies, meaning that if it was called for a disease in one study, it would be assigned a biomarker for the other disease in the other study. 
+
+```{r, eval=FALSE}
+final_biomarkers <- list(
+  WP = WP_all_final$Entry,
+  SCTLD = SCTLD_all_final$Entry
+)
+
+ggvenn(
+  final_biomarkers,
+  fill_color = c("#d8b365", "#5ab4ac"),
+  stroke_size = 0.5, set_name_size = 8, text_size = 6
+)
+dev.off()
+
+pdf(file = "All_biomarkers_noalgal.pdf", height = 8, width = 8)
+ggvenn(
+  final_biomarkers,
+  fill_color = c("#d8b365", "#5ab4ac"),
+  stroke_size = 0.5, set_name_size = 8, text_size = 10
+)
+dev.off()
+
+final_biomarkers_intersect <- Intersect(final_biomarkers[c("WP", "SCTLD")])
+# [1] "Q8LPN7" "Q9NY47" "Q5RDC1" "B0JZG0" "Q7SIA2" "Q7D513" "Q5ZJ69" "P21576" "Q96DY2" "Q08CH8"
+# [11] "P79134" "Q3KR37" "Q8CGN4" "Q9UBV2" "G3MWR8" "P42700" "Q15061" "Q27802" "Q3TLD5" "Q5M7N9"
+# [21] "Q9EQU5"
+```
+
+#### Logistic Regression Biomarkers 
+
+A total of 206 biomarkers were visualized with 47 being unique to WP, 159 being unique to SCTLD and no overlap between the two diseases. 
+
+```{r, eval=FALSE}
+# Venn Diagram of Final LG Biomarkers  
+final_LG_biomarkers <- list(
+  WP = WP_LG_noalgal_v2$Entry,
+  SCTLD = SCTLD_LG_noalgal_v2$Entry
+)
+
+ggvenn(
+  final_LG_biomarkers,
+  fill_color = c("#d8b365", "#5ab4ac"),
+  stroke_size = 0.5, set_name_size = 8, text_size = 6
+)
+dev.off()
+
+pdf(file = "LG_biomarkers_noalgal.pdf", height = 8, width = 8)
+ggvenn(
+  final_LG_biomarkers,
+  fill_color = c("#d8b365", "#5ab4ac"),
+  stroke_size = 0.5, set_name_size = 8, text_size = 10
+)
+dev.off()
+```
+
+#### DEG biomarkers 
+
+A total of 282 biomarkers were visualized with 143 being unique to WP, 139 being unique to SCTLD and no overlap between the two diseases. 
+
+```{r, eval=FALSE}
+final_DEG_biomarkers <- list(
+  WP = DEGs_down_noalgal$Entry,
+  SCTLD = DEGs_up_noalgal$Entry
+)
+
+ggvenn(
+  final_DEG_biomarkers,
+  fill_color = c("#d8b365", "#5ab4ac"),
+  stroke_size = 0.5, set_name_size = 8, text_size = 6
+)
+dev.off()
+
+pdf(file = "DEG_biomarkers_noalgal.pdf", height = 8, width = 8)
+ggvenn(
+  final_DEG_biomarkers,
+  fill_color = c("#d8b365", "#5ab4ac"),
+  stroke_size = 0.5, set_name_size = 8, text_size = 10
+)
+dev.off()
+```
+
+# Checking with PLS-DA 
+
+To determine the best model, we will create 4 training models that will explore the statistical singificance of a varitey of expressed genes groups. These will include: 1) all genes expressed & normalized, 2) differential expressed genes only, 3) logistic regression genes only, and finally 4) finalized biomarker list. 
+
+## All genes expressed 
+
+In this model, we will create a partial least squares discriminant analysis with all normalized genes expressed in all 7 species. There are a total of 18,597 genes in this model. 
+
+### Load in data
+
+To create the model we will load in our gene counts (X) and our disease classification (Y). 
+
+```{r, eval=FALSE}
+# All genes PLS-DA  
+gene_counts <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/Normalization_DESeq/normalized_counts_vstCounts_Diseased.csv", row.names = "Entry"))
+
+metadata <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/counts/metadata_diseased.csv", row.names = "Sample"))
+metadata_diseased <- metadata %>% filter(metadata$Training_Testing == c("Training"))
+
+X.all <- (t(gene_counts))
+X.all <- as.data.frame(X.all)
+dim(X.all)
+# [1]    34 18597
+
+Y <- as.factor(metadata_diseased$Disease)
+summary(Y)
+# SCTLD    WP 
+# 19    15  
+```
+
+### PLS-DA analysis
+
+We will put the X and Y variables into the PLS-DA model from mixOmics. Background will be calculated along with the error rates and perfect components identified based on error rate. Finally, the AUV values with their p-values will be obtained. 
+
+First we will create the model and calculate the background to visualize training samples on a two dimensional plane. 
+
+```{r, eval=FALSE}
+# PLS-DA Analysis 
+
+# sample plot 
+coral.plsda.all.genes <- plsda(X.all, Y, ncomp = 10)  # set ncomp to 10 for performance assessment later
+plotIndiv(coral.plsda.all.genes, comp = 1:2,
+          ind.names = metadata_diseased$Species, 
+          group= metadata_diseased$Disease, 
+          legend = TRUE, 
+          ellipse = TRUE,  
+          title = 'PLS-DA All Genes', 
+          col = c('#5ab4ac','#d8b365'))
+
+# with background
+background.all = background.predict(coral.plsda.all.genes, comp.predicted=2, dist = "max.dist") 
+
+
+plotIndiv(coral.plsda.all.genes, comp = 1:2,
+          group = metadata_diseased$Disease, 
+          ind.names = metadata_diseased$Species, 
+          title = "Maximum distance",
+          legend = TRUE,  background = background.all, 
+          col = c('#5ab4ac','#d8b365'))
+dev.off()
+
+pdf(file = "PLS-DA_all_genes.pdf", width = 8, height = 8)
+plotIndiv(coral.plsda.all.genes, comp = 1:2,
+          ind.names = metadata_diseased$Species, 
+          group= metadata_diseased$Disease, 
+          legend = TRUE, 
+          ellipse = TRUE,  
+          title = 'PLS-DA LG Biomarkers', 
+          col = c('#5ab4ac','#d8b365'))
+dev.off()
+
+
+pdf(file = "PLS-DA_all_genes_bkgrnd.pdf", width = 8, height = 8)
+plotIndiv(coral.plsda.all.genes, comp = 1:2,
+          group = metadata_diseased$Disease, 
+          ind.names = metadata_diseased$Species, 
+          title = "Maximum distance",
+          legend = TRUE,  background = background, 
+          col = c('#5ab4ac','#d8b365'))
+dev.off()
+```
+
+
+We will now calculate the error rates. We will use a validation of "Mfold" and use a total of 5 fold, with 10 repeats. 
+
+Using the differntially expressed genes, we obtain a model with AUC of 0.9298 (p-value 2.15E-05) in component 1. The overall choice components 5/4/5 (max.distance, centroids distance, and mahalanobis distance respectively). This means, to create a final model, you would want to use 5 components to build the best model. The error rate for component one was 0.2735294, 0.2852941, and 0.2852941 (max.distance, centroids distance, and mahalanobis distance respectively). Additional error rates and AUC values for different components are available in supplemental files. 
+
+```{r, eval=FALSE}
+set.seed(2543) # for reproducibility, only when the `cpus' argument is not used
+perf.plsda.coral.all <- perf(coral.plsda.all.genes, 
+                            validation = "Mfold", folds = 5, 
+                            progressBar = FALSE, auc = TRUE, nrepeat = 10) 
+perf.plsda.coral.all$error.rate 
+
+perf.plsda.coral.all$choice.ncomp
+
+plot(perf.plsda.coral.all, col = color.mixo(5:7), sd = TRUE, legend.position = "horizontal")
+
+auc.plsda.all = auroc(coral.plsda.all.genes, roc.comp = 1)
+dev.off()
+
+pdf(file = "PLS-DA_horizontal_allgenes.pdf", width = 8, height = 8)
+plot(perf.plsda.coral, col = color.mixo(5:7), sd = TRUE, legend.position = "horizontal")
+dev.off()
+pdf(file = "PLS-DA_DO_ROC_allgenes.pdf", width = 8, height = 6)
+auc.plsda = auroc(coral.plsda.all.genes, roc.comp = 1)
+dev.off()
+```
+
+## DEGs only 
+
+In this model, we will create a partial least squares discriminant analysis with only the differentially expressed genes. There are a total of 282 genes in this model. 
+
+### Load in data
+
+To create the model we will load in our gene counts (X) and our disease classificiation (Y). 
+
+```{r, eval=FALSE}
+# DEGs only Biomarkers 
+DEGs_up <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/Normalization_DESeq/upReg_4sp.csv"))
+DEGs_down <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/Normalization_DESeq/downReg_4sp.csv"))
+DEGs_all <- full_join(DEGs_up,DEGs_down)
+algal_contaminants <- c("A0T0T0","A2Y8E0","A6MW33","O22870","O48721","O48921","O64730","P11471",
+                        "P51390","P51874","P93664","Q40297","Q40300","Q41093","Q5ENN5","Q8GVP6",
+                        "Q8H0U5","Q8RWM7","Q9CA67","Q9S714","Q9SIP7","Q8L7C9")
+gene_counts <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/Normalization_DESeq/normalized_counts_vstCounts_Diseased.csv", row.names = "Entry"))
+testing_genes <- DEGs_all$Entry
+testing_genes_noalgal <- testing_genes[!(testing_genes %in% algal_contaminants)]
+gene_counts <- gene_counts[ testing_genes_noalgal, ]
+
+
+metadata <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/counts/metadata_diseased.csv", row.names = "Sample"))
+metadata_diseased <- metadata %>% filter(metadata$Training_Testing == c("Training"))
+
+X <- (t(gene_counts))
+X <- as.data.frame(X)
+dim(X)
+# [1]  34 282
+
+Y <- as.factor(metadata_diseased$Disease)
+summary(Y)
+# SCTLD    WP 
+# 19    15 
+```
+
+### PLS-DA analysis
+
+We will put the X and Y variables into the PLS-DA model from mixOmics. Background will be calculated along with the error rates and perfect components identified based on error rate. Finally, the AUV values with their p-values will be obtained. 
+
+First we will create the model and calculate the background to visualize training samples on a two dimensional plane. 
+
+```{r, eval=FALSE}
+# PLS-DA Analysis 
+
+# sample plot 
+coral.plsda.degs.biomarkers <- plsda(X, Y, ncomp = 10)  # set ncomp to 10 for performance assessment later
+plotIndiv(coral.plsda.degs.biomarkers, comp = 1:2,
+          ind.names = metadata_diseased$Species, 
+          group= metadata_diseased$Disease, 
+          legend = TRUE, 
+          ellipse = TRUE,  
+          title = 'PLS-DA All Biomarkers', 
+          # pch = c('A' = 21, 'B'= 22, 'C'= 23, 'D' = 24)[as.character(metadata$Top_Symbiont)],
+          col = c('#5ab4ac','#d8b365'))
+
+# with background
+background = background.predict(coral.plsda.degs.biomarkers, comp.predicted=2, dist = "max.dist") 
+
+
+plotIndiv(coral.plsda.degs.biomarkers, comp = 1:2,
+          group = metadata_diseased$Disease, 
+          ind.names = metadata_diseased$Species, 
+          title = "Maximum distance",
+          legend = TRUE,  background = background, 
+          col = c('#5ab4ac','#d8b365'))
+dev.off()
+
+pdf(file = "PLS-DA_Disease_Classification_bmkr_DEGs.pdf", width = 8, height = 8)
+plotIndiv(coral.plsda.degs.biomarkers, comp = 1:2,
+          ind.names = metadata_diseased$Species, 
+          group= metadata_diseased$Disease, 
+          legend = TRUE, 
+          ellipse = TRUE,  
+          title = 'PLS-DA DEG Biomarkers', 
+          # pch = c('A' = 21, 'B'= 22, 'C'= 23, 'D' = 24)[as.character(metadata$Top_Symbiont)],
+          col = c('#5ab4ac','#d8b365'))
+dev.off()
+
+
+pdf(file = "PLS-DA_Disease_Classification_bkgrnd_bmkr_DEG.pdf", width = 8, height = 8)
+plotIndiv(coral.plsda.degs.biomarkers, comp = 1:2,
+          group = metadata_diseased$Disease, 
+          ind.names = metadata_diseased$Species, 
+          title = "Maximum distance",
+          legend = TRUE,  background = background, 
+          col = c('#5ab4ac','#d8b365'))
+dev.off()
+```
+
+
+We will now calculate the error rates. We will use a validation of "Mfold" and use a total of 5 fold, with 10 repeats. 
+
+Using the differntially expressed genes, we obtain a model with AUC of 0.9965 (p-value 9.21 e-7) in component 1. The overall choice components 5/3/5 (max.distance, centroids distance, and mahalanobis distance respectively). This means, to create a final model, you would want to use 5 components to build the best model. The error rate for component one was 0.15882353, 0.15882353, and 0.15882353 (max.distance, centroids distance, and mahalanobis distance respectively). Additional error rates and AUC values for different components are available in supplemental files. 
+
+```{r, eval=FALSE}
+set.seed(2543) # for reproducibility, only when the `cpus' argument is not used
+perf.plsda.coral.degs <- perf(coral.plsda.degs.biomarkers, 
+                             validation = "Mfold", folds = 5, 
+                             progressBar = FALSE, auc = TRUE, nrepeat = 10) 
+perf.plsda.coral.degs$error.rate 
+
+perf.plsda.coral.degs$choice.ncomp
+
+plot(perf.plsda.coral.degs, col = color.mixo(5:7), sd = TRUE, legend.position = "horizontal")
+
+auc.plsda = auroc(coral.plsda.degs.biomarkers, roc.comp = 1)
+dev.off()
+
+pdf(file = "PLS-DA_horizontal_bmkr_degs.pdf", width = 8, height = 8)
+plot(perf.plsda.coral.degs, col = color.mixo(5:7), sd = TRUE, legend.position = "horizontal")
+dev.off()
+pdf(file = "PLS-DA_DO_ROC_bmkr_degs.pdf", width = 8, height = 8)
+auc.plsda = auroc(coral.plsda.degs.biomarkers, roc.comp = 1)
+dev.off()
+```
+
+## LG Only 
+
+In this model, we will create a partial least squares discriminant analysis with only the logsitic regression genes. There are a total of 206 genes in this model. 
+
+### Load in data
+
+To create the model we will load in our gene counts (X) and our disease classificiation (Y). 
+
+```{r, eval=FALSE}
+# Logistic Regression only Biomarkers 
+WP_LG <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/LG/WP_unique_biomarkers_annot.csv"))
+SCTLD_LG <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/LG/SCTLD_unique_biomarkers_annot.csv"))
+LG_all <- full_join(WP_LG,SCTLD_LG)
+algal_contaminants <- c("A0T0T0","A2Y8E0","A6MW33","O22870","O48721","O48921","O64730","P11471",
+                        "P51390","P51874","P93664","Q40297","Q40300","Q41093","Q5ENN5","Q8GVP6",
+                        "Q8H0U5","Q8RWM7","Q9CA67","Q9S714","Q9SIP7","Q8L7C9")
+gene_counts <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/Normalization_DESeq/normalized_counts_vstCounts_Diseased.csv", row.names = "Entry"))
+testing_genes <- LG_all$Entry
+testing_genes_noalgal <- testing_genes[!(testing_genes %in% algal_contaminants)]
+gene_counts <- gene_counts[ testing_genes_noalgal, ]
+
+
+metadata <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/counts/metadata_diseased.csv", row.names = "Sample"))
+metadata_diseased <- metadata %>% filter(metadata$Training_Testing == c("Training"))
+
+X <- (t(gene_counts))
+X <- as.data.frame(X)
+dim(X)
+# [1]  34 206
+
+Y <- as.factor(metadata_diseased$Disease)
+summary(Y)
+# SCTLD    WP 
+# 19    15 
+```
+
+### PLS-DA Analysis
+
+We will put the X and Y variables into the PLS-DA model from mixOmics. Background will be calculated along with the error rates and perfect components identified based on error rate. Finally, the AUV values with their p-values will be obtained. 
+
+First we will create the model and calculate the background to visualize training samples on a two dimensional plane. 
+
+```{r, eval=FALSE}
+# PLS-DA Analysis 
+
+# sample plot 
+coral.plsda.lg.biomarkers <- plsda(X, Y, ncomp = 10)  # set ncomp to 10 for performance assessment later
+plotIndiv(coral.plsda.lg.biomarkers, comp = 1:2,
+          ind.names = metadata_diseased$Species, 
+          group= metadata_diseased$Disease, 
+          legend = TRUE, 
+          ellipse = TRUE,  
+          title = 'PLS-DA LG Biomarkers', 
+          # pch = c('A' = 21, 'B'= 22, 'C'= 23, 'D' = 24)[as.character(metadata$Top_Symbiont)],
+          col = c('#5ab4ac','#d8b365'))
+
+# with background
+background = background.predict(coral.plsda.lg.biomarkers, comp.predicted=2, dist = "max.dist") 
+
+
+plotIndiv(coral.plsda.lg.biomarkers, comp = 1:2,
+          group = metadata_diseased$Disease, 
+          ind.names = metadata_diseased$Species, 
+          title = "Maximum distance",
+          legend = TRUE,  background = background, 
+          col = c('#5ab4ac','#d8b365'))
+dev.off()
+
+pdf(file = "PLS-DA_Disease_Classification_bmkr_lg.pdf", width = 8, height = 8)
+plotIndiv(coral.plsda.lg.biomarkers, comp = 1:2,
+          ind.names = metadata_diseased$Species, 
+          group= metadata_diseased$Disease, 
+          legend = TRUE, 
+          ellipse = TRUE,  
+          title = 'PLS-DA LG Biomarkers', 
+          # pch = c('A' = 21, 'B'= 22, 'C'= 23, 'D' = 24)[as.character(metadata$Top_Symbiont)],
+          col = c('#5ab4ac','#d8b365'))
+dev.off()
+
+
+pdf(file = "PLS-DA_Disease_Classification_bkgrnd_bmkr_lg.pdf", width = 8, height = 8)
+plotIndiv(coral.plsda.lg.biomarkers, comp = 1:2,
+          group = metadata_diseased$Disease, 
+          ind.names = metadata_diseased$Species, 
+          title = "Maximum distance",
+          legend = TRUE,  background = background, 
+          col = c('#5ab4ac','#d8b365'))
+dev.off()
+```
+
+We will now calculate the error rates. We will use a validation of "Mfold" and use a total of 5 fold, with 10 repeats. 
+
+Using the differntially expressed genes, we obtain a model with AUC of 1 (p-value 7.71E-07) in component 1. The overall choice components 2/5/2 (max.distance, centroids distance, and mahalanobis distance respectively). This means, to create a final model, you would want to use 2 components to build the best model. The error rate for component one was 0.18529412, 0.1764706, and 0.17647059 (max.distance, centroids distance, and mahalanobis distance respectively). Additional error rates and AUC values for different components are available in supplemental files. 
+
+```{r, eval=FALSE}
+set.seed(2543) # for reproducibility, only when the `cpus' argument is not used
+perf.plsda.coral.lg <- perf(coral.plsda.lg.biomarkers, 
+                              validation = "Mfold", folds = 5, 
+                              progressBar = FALSE, auc = TRUE, nrepeat = 10) 
+perf.plsda.coral.lg$error.rate 
+
+perf.plsda.coral.lg$choice.ncomp
+
+plot(perf.plsda.coral.lg, col = color.mixo(5:7), sd = TRUE, legend.position = "horizontal")
+
+auc.plsda = auroc(coral.plsda.lg.biomarkers, roc.comp = 1)
+dev.off()
+
+pdf(file = "PLS-DA_horizontal_bmkr_lg.pdf", width = 8, height = 8)
+plot(perf.plsda.coral.lg, col = color.mixo(5:7), sd = TRUE, legend.position = "horizontal")
+dev.off()
+pdf(file = "PLS-DA_DO_ROC_bmkr_lg.pdf", width = 8, height = 8)
+auc.plsda = auroc(coral.plsda.lg.biomarkers, roc.comp = 1)
+dev.off()
+```
+
+
+## All biomarkers 
+
+In this model, we will create a partial least squares discriminant analysis using the identified potential biomarkers. There are a total of 463 genes in this model. 
+
+### Load in data
+
+To create the model we will load in our gene counts (X) and our disease classification (Y). 
+
+```{r, eval=FALSE}
+# All Biomarkers 
+biomarkers <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/potential_biomarkers/finalized_biomarkers.csv"))
+gene_counts <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/Normalization_DESeq/normalized_counts_vstCounts_Diseased.csv", row.names = "Entry"))
+testing_genes <- biomarkers$Entry
+gene_counts <- gene_counts[ testing_genes, ]
+
+metadata <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/counts/metadata_diseased.csv", row.names = "Sample"))
+metadata_diseased <- metadata %>% filter(metadata$Training_Testing == c("Training"))
+
+X <- (t(gene_counts))
+X <- as.data.frame(X)
+dim(X)
+# [1]  34 463
+
+Y <- as.factor(metadata_diseased$Disease)
+summary(Y)
+# SCTLD    WP 
+# 19    15 
+```
+
+### PLS-DA Analysis
+
+We will put the X and Y variables into the PLS-DA model from mixOmics. Background will be calculated along with the error rates and perfect components identified based on error rate. Finally, the AUC values with their p-values will be obtained. 
+
+First we will create the model and calculate the background to visualize training samples on a two dimensional plane. 
+
+```{r, eval=FALSE}
+# PLS-DA Analysis 
+
+# sample plot 
+coral.plsda.all.biomarkers <- plsda(X, Y, ncomp = 10)  # set ncomp to 10 for performance assessment later
+plotIndiv(coral.plsda.all.biomarkers, comp = 1:2,
+          ind.names = metadata_diseased$Species, 
+          group= metadata_diseased$Disease, 
+          legend = TRUE, 
+          ellipse = TRUE,  
+          title = 'PLS-DA All Biomarkers', 
+          # pch = c('A' = 21, 'B'= 22, 'C'= 23, 'D' = 24)[as.character(metadata$Top_Symbiont)],
+          col = c('#5ab4ac','#d8b365'))
+
+# with background
+background = background.predict(coral.plsda.all.biomarkers , comp.predicted=2, dist = "max.dist") 
+
+
+plotIndiv(coral.plsda.all.biomarkers , comp = 1:2,
+          group = metadata_diseased$Disease, 
+          ind.names = metadata_diseased$Species, 
+          title = "Maximum distance",
+          legend = TRUE,  background = background, 
+          col = c('#5ab4ac','#d8b365'))
+dev.off()
+
+pdf(file = "PLS-DA_Disease_Classification_bmkr_all.pdf", width = 8, height = 8)
+plotIndiv(coral.plsda.all.biomarkers, comp = 1:2,
+          ind.names = metadata_diseased$Species, 
+          group= metadata_diseased$Disease, 
+          legend = TRUE, 
+          ellipse = TRUE,  
+          title = 'PLS-DA All Biomarkers', 
+          # pch = c('A' = 21, 'B'= 22, 'C'= 23, 'D' = 24)[as.character(metadata$Top_Symbiont)],
+          col = c('#5ab4ac','#d8b365'))
+dev.off()
+
+
+pdf(file = "PLS-DA_Disease_Classification_bkgrnd_bmkr_all.pdf", width = 8, height = 8)
+plotIndiv(coral.plsda.all.biomarkers , comp = 1:2,
+          group = metadata_diseased$Disease, 
+          ind.names = metadata_diseased$Species, 
+          title = "Maximum distance",
+          legend = TRUE,  background = background, 
+          col = c('#5ab4ac','#d8b365'))
+dev.off()
+```
+
+We will now calculate the error rates. We will use a validation of "Mfold" and use a total of 5 fold, with 10 repeats. 
+
+Using the differntially expressed genes, we obtain a model with AUC of 0.9965 (p-value 9.21E-07) in component 1. The overall choice components 2/8/2 (max.distance, centroids distance, and mahalanobis distance respectively). This means, to create a final model, you would want to use 2 components to build the best model. The error rate for component one was 0.16764706, 0.16176471, and 0.16176471 (max.distance, centroids distance, and mahalanobis distance respectively). Additional error rates and AUC values for different components are available in supplemental files. 
+
+```{r, eval=FALSE}
+set.seed(2543) # for reproducibility, only when the `cpus' argument is not used
+perf.plsda.coral.all <- perf(coral.plsda.all.biomarkers, 
+                         validation = "Mfold", folds = 5, 
+                         progressBar = FALSE, auc = TRUE, nrepeat = 10) 
+perf.plsda.coral.all$error.rate 
+
+perf.plsda.coral.all$choice.ncomp
+
+plot(perf.plsda.coral.all, col = color.mixo(5:7), sd = TRUE, legend.position = "horizontal")
+
+auc.plsda = auroc(coral.plsda.all.biomarkers, roc.comp = 1)
+
+dev.off()
+
+pdf(file = "PLS-DA_horizontal_bmkr_all.pdf", width = 8, height = 8)
+plot(perf.plsda.coral.all, col = color.mixo(5:7), sd = TRUE, legend.position = "horizontal")
+dev.off()
+pdf(file = "PLS-DA_DO_ROC_bmkr_all.pdf", width = 8, height = 8)
+auc.plsda = auroc(coral.plsda.all.biomarkers, roc.comp = 1)
+dev.off()
+```
+
+## Save Rdata 
+
+```{r, eval=FALSE}
+save(algal_contaminants, all_bmkr_plot, all.biomarker.error.plot, all.genes.error.plot, auc.plsda, auc.plsda.all, background, background.all, background.degs,background.lg, biomarkers, coral.plsda.all.biomarkers, coral.plsda.all.genes, coral.plsda.degs.biomarkers, coral.plsda.lg.biomarkers, deg_bmkr_plot, DEGs_all, DEGs_down, DEGs_up, degs.error.plot, gene_counts, LG_all, lg_bmkr_plot, metadata, metadata_diseased, perf.plsda.coral.all, perf.plsda.coral.all.biomarkers, perf.plsda.coral.degs, perf.plsda.coral.lg, SCTLD_LG, testing_genes, testing_genes_noalgal, WP_LG, X, X.all, X.deg, X.lg, Y, file = "training_plsda.RData")  
+```
+
+## Bar Graph Visualization of Biomarkers 
+
+To determine direction of expression (higher expression in one disease over another), we developed bar graphs to visualize this expression. Biomarkers from SCTLD and WP were separated and put into bar graphs comparing total SCTLD and WP expression and by species. 
+
+### Set Up Working Directory 
+
+```{r, eval=FALSE}
+# Bar Graphs Showing Biomarker directional 
+gene_counts <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/Normalization_DESeq/normalized_counts_vstCounts_Diseased.csv", row.names = "Entry"))
+gene_counts <- t(gene_counts)
+gene_counts <- as.data.frame(gene_counts)
+metadata <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/counts/metadata_diseased.csv", row.names = "Sample"))
+metadata_diseased <- metadata %>% filter(metadata$Training_Testing == c("Training"))
+metadata_diseased$Training_Testing
+rownames(metadata_diseased) == rownames(gene_counts)
+
+# make master 
+gene_counts$Disease <- metadata_diseased$Disease
+gene_counts$Species <- metadata_diseased$Species
+master <- gene_counts
+
+# biomarkers of interst 
+WP_bmkrs <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/potential_biomarkers/WP_bmkrs_noagal.csv")
+SCTLD_bmkrs <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/potential_biomarkers/SCTLD_bmkrs_noagal.csv")
+
+SCTLD_interested <- SCTLD_bmkrs$Entry
+WP_interested <- WP_bmkrs$Entry
+overlapping_biomarkers <- c("B0JZG0","G3MWR8","P21576","P42700","Q15061","Q27802","Q3KR37","Q3TLD5","Q5M7N9","Q5RDC1","Q5ZJ69","Q7D513","Q7SIA2", "Q8LPN7", "Q96DY2","Q9NY47","Q9UBV2")
+```
+
+### SCTLD 
+
+```{r, eval=FALSE}
+# Loop visuals for SCTLD biomarkers 
+
+# List of variables to analyze
+variables_to_analyze <- SCTLD_interested
+
+# Loop through each variable
+for (var in variables_to_analyze) {
+  # Perform t-test
+  comparison_result <- compare_means(reformulate("Disease", response = var), data = master, method = "t.test")
+  
+  # Create the plots
+  plot_disease <- 
+    ggplot(data = master, aes_string(x = "Disease", y = var, fill = "Disease")) +
+    geom_point(aes_string(y = var, color = "Disease"),
+               position = position_dodge(width = 0.47), size = 1.5, alpha = 2) +
+    geom_boxplot(width = 0.5, outlier.shape = NA, alpha = 0.5) +
+    labs(y = "vst Expression", fill = "Disease", color = "Disease",
+         title = paste("Expression of", var)) +
+    scale_x_discrete(labels = c("WP" = "WP", "SCTLD" = "SCTLD")) +
+    scale_color_manual(values = c("#5ab4ac", "#d8b365")) +
+    scale_fill_manual(values = c("#5ab4ac", "#d8b365")) +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.1))) +
+    stat_pvalue_manual(comparison_result, y.position = 11, step.increase = 0.15, inherit.aes = FALSE, size = 3)
+  
+  plot_species <- 
+    ggplot(data = master, aes_string(x = "Disease", y = var, fill = "Disease")) +
+    geom_point(aes_string(y = var, color = "Disease"),
+               position = position_dodge(width = 0.47), size = 1.5, alpha = 2) +
+    geom_boxplot(width = 0.5, outlier.shape = NA, alpha = 0.5) +
+    labs(y = "vst Expression", fill = "Disease", color = "Disease",
+         title = paste("Expression of", var)) +
+    scale_x_discrete(labels = c("WP" = "WP", "SCTLD" = "SCTLD")) +
+    scale_color_manual(values = c("#5ab4ac", "#d8b365")) +
+    scale_fill_manual(values = c("#5ab4ac", "#d8b365")) +
+    facet_wrap(~Species) +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.1))) +
+    stat_pvalue_manual(comparison_result, y.position = 11, step.increase = 0.15, inherit.aes = FALSE, size = 3)
+  
+  # Save the plots to PDF
+  pdf_filename <- paste0("./SCTLD/", var, "_disease_species.pdf")
+  pdf(file = pdf_filename, height = 8, width = 8)
+  print(plot_disease)
+  print(plot_species)
+  dev.off()
+}
+```
+
+### WP 
+
+```{r, eval=FALSE}
+# Loop visuals for WP biomarkers 
+
+# List of variables to analyze
+variables_to_analyze <- WP_interested
+
+# Loop through each variable
+for (var in variables_to_analyze) {
+  # Perform t-test
+  comparison_result <- compare_means(reformulate("Disease", response = var), data = master, method = "t.test")
+  
+  # Create the plots
+  plot_disease <- 
+    ggplot(data = master, aes_string(x = "Disease", y = var, fill = "Disease")) +
+    geom_point(aes_string(y = var, color = "Disease"),
+               position = position_dodge(width = 0.47), size = 1.5, alpha = 2) +
+    geom_boxplot(width = 0.5, outlier.shape = NA, alpha = 0.5) +
+    labs(y = "vst Expression", fill = "Disease", color = "Disease",
+         title = paste("Expression of", var)) +
+    scale_x_discrete(labels = c("WP" = "WP", "SCTLD" = "SCTLD")) +
+    scale_color_manual(values = c("#5ab4ac", "#d8b365")) +
+    scale_fill_manual(values = c("#5ab4ac", "#d8b365")) +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.1))) +
+    stat_pvalue_manual(comparison_result, y.position = 11, step.increase = 0.15, inherit.aes = FALSE, size = 3)
+  
+  plot_species <- 
+    ggplot(data = master, aes_string(x = "Disease", y = var, fill = "Disease")) +
+    geom_point(aes_string(y = var, color = "Disease"),
+               position = position_dodge(width = 0.47), size = 1.5, alpha = 2) +
+    geom_boxplot(width = 0.5, outlier.shape = NA, alpha = 0.5) +
+    labs(y = "vst Expression", fill = "Disease", color = "Disease",
+         title = paste("Expression of", var)) +
+    scale_x_discrete(labels = c("WP" = "WP", "SCTLD" = "SCTLD")) +
+    scale_color_manual(values = c("#5ab4ac", "#d8b365")) +
+    scale_fill_manual(values = c("#5ab4ac", "#d8b365")) +
+    facet_wrap(~Species) +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.1))) +
+    stat_pvalue_manual(comparison_result, y.position = 11, step.increase = 0.15, inherit.aes = FALSE, size = 3)
+  
+  # Save the plots to PDF
+  pdf_filename <- paste0("./WP/", var, "_disease_species.pdf")
+  pdf(file = pdf_filename, height = 8, width = 8)
+  print(plot_disease)
+  print(plot_species)
+  dev.off()
+}
+```

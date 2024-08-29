@@ -1,0 +1,810 @@
+---
+title: "Coral Transcript Tximport"
+author: "Emily Van Buren"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Set Up Working Directory 
+
+In this markdown we will go over how tximport was used to merge all unprot IDs across 7 species into one gene count matrix. We will also demonstrate how 
+
+```{r, eval=FALSE}
+# working directory
+setwd("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations")
+library(tidyverse)
+library(dplyr)
+```
+
+## Presence Absence of Annotated Contigs in 7 transcriptomes
+
+Annotation text files obtained from NCBI blast annotation protocol were put into R and evaluated for e-value and presence in each transcriptome. Prior to importing to R, we edit the txt files in excel by obtaining just the uniprot IDs for the entry names. This is done by creating two additional columns, with the first column having this equation =RIGHT(A2, LEN(A2) - SEARCH("|", A2)) to keep text after the first |, and then this equation =LEFT(B2, SEARCH("|", B2) -1) in the second column to remove everything after the first |. These values are then saved as csv files, and then input into the code below. 
+
+### Import annotations from each species 
+
+```{r, eval=FALSE}
+# Cnat 
+cnat <- as.data.frame(read.csv("annotated_cnat_ref_transcriptome.csv"))
+# 51,141 annotated contigs  
+cnat <- cnat[ !duplicated(cnat$Entry), ]
+# 22,701 annotated contigs 
+cnat <- cnat %>% filter(Evalue < 0.000001)
+# 11,403 contigs at evalue 1e-6
+cnat <- cnat[,c(1,2)]
+cnat_txt2gene <- cnat[,c(2,1)]
+write.csv(cnat_txt2gene, file = "cnat_txt2gene.csv")
+
+# Mcav
+mcav <- as.data.frame(read.csv("annotated_mcav_ref_transcriptome.csv"))
+# 44,639 annotated contigs 
+mcav <- mcav[ !duplicated(mcav$Entry), ]
+# 18,475 annoated contigs with no duplicates 
+mcav <- mcav %>% filter(Evalue < 0.000001)
+# 9,906 contigs at evalue 1e-6 
+mcav <- mcav[,c(1,2)]
+mcav_txt2gene <- mcav[,c(2,1)]
+write.csv(mcav_txt2gene, file = "mcav_txt2gene.csv")
+
+# Past
+past <- as.data.frame(read.csv("annotated_past_gene_model.csv"))
+# 114,444 annotated contigs 
+past <- past[ !duplicated(past$Entry), ]
+# 33,533 annoated contigs with no duplicates 
+past <- past %>% filter(Evalue < 0.000001)
+# 12,549 contigs at evalue 1e-6 
+past <- past[,c(1,2)]
+past_txt2gene <- past[,c(2,1)]
+write.csv(past_txt2gene, file = "past_txt2gene.csv")
+
+# Oann
+oann <- as.data.frame(read.csv("annotated_oann_ref_transcriptome.csv"))
+# 70,264 annotated contigs 
+oann <- oann[ !duplicated(oann$Entry), ]
+# 25,751 annotated contigs with no duplicates 
+oann <- oann %>% filter(Evalue < 0.000001)
+# 12,841 contigs at evalue 1e-6 
+oann <- oann[,c(1,2)]
+oann_txt2gene <- oann[,c(2,1)]
+write.csv(oann_txt2gene, file = "oann_txt2gene.csv")
+
+# Ofav
+ofav <- as.data.frame(read.csv("annotated_ofav_ref_transcriptome.csv"))
+# 76,460 annotated contigs 
+ofav <- ofav[ !duplicated(ofav$Entry), ]
+# 26,288 annotated contigs with no duplicates 
+ofav <- ofav %>% filter(Evalue < 0.000001)
+# 13,071 contigs at evalue 1e-6 
+ofav <- ofav[,c(1,2)]
+ofav_txt2gene <- ofav[,c(2,1)]
+write.csv(ofav_txt2gene, file = "ofav_txt2gene.csv")
+
+# Ssid
+ssid <- as.data.frame(read.csv("annotated_ssid_ref_transcriptome.csv"))
+# 51,467 annotated contigs
+ssid <- ssid[ !duplicated(ssid$Entry), ]
+# 23,365 annotated contigs with no duplicates 
+ssid <- ssid %>% filter(Evalue < 0.000001)
+# 12,433 contigs at evalue 1e-6 
+ssid <- ssid[,c(1,2)]
+ssid_txt2gene <- ssid[,c(2,1)]
+write.csv(ssid_txt2gene, file = "ssid_txt2gene.csv")
+
+#Pstr
+pstrig <- as.data.frame(read.csv("annotated_pstr_ref_transcriptome.csv"))
+# 31,838 annotated contigs 
+pstrig <- pstrig[ !duplicated(pstrig$Entry), ]
+# 16,949 annotated contigs with no duplicates 
+pstrig  <- pstrig  %>% filter(E.value <= 0.000001)
+# 9,584 contigs with evalue of 1e-6 
+pstrig <- pstrig[,c(1,2)]
+pstrig_txt2gene <- pstrig[,c(2,1)]
+write.csv(pstrig_txt2gene, file = "pstrig_txt2gene.csv")
+```
+
+### Merge files by Entry ID 
+
+```{r, eval=FALSE}
+# files then can be merged together by entry ID 
+
+PA <- merge(cnat,mcav, by="Entry", all=TRUE)
+colnames(PA) <- c("Entry", "Cnat","Mcav")
+PA <- merge(PA,oann, by="Entry", all=TRUE) 
+colnames(PA) <- c("Entry", "Cnat","Mcav","Oann")
+PA_2 <- merge(past,ofav, by="Entry", all=TRUE) 
+colnames(PA_2) <- c("Entry", "Past","Ofav")
+PA_2 <- merge(PA_2,ssid, by="Entry", all=TRUE)
+colnames(PA_2) <- c("Entry","Past","Ofav","Ssid")
+PA <- merge(PA,PA_2, by="Entry", all=TRUE)
+PA <- merge(PA,pstrig,by="Entry",all=TRUE)
+colnames(PA) <-c("Entry","Cnat","Mcav","Oann","Past","Ofav","Ssid","Pstr")
+
+PA$Cnat<-ifelse(PA$Cnat=="NA",0,1)
+PA$Mcav<-ifelse(PA$Mcav=="NA",0,1)
+PA$Oann<-ifelse(PA$Oann=="NA",0,1)
+PA$Ofav<-ifelse(PA$Ofav=="NA",0,1)
+PA$Past<-ifelse(PA$Past=="NA",0,1)
+PA$Ssid<-ifelse(PA$Past=="NA",0,1)
+PA$Pstr<-ifelse(PA$Pstr=="NA",0,1)
+
+PA[is.na(PA)] = 0
+# a total of 29,769 contigs at evalue 1e-6 expressed in the 7 species 
+
+PA <- PA %>%
+  mutate(Total = select(., Cnat:Pstr) %>% rowSums(na.rm = TRUE))
+
+nrow(PA[PA$Total>6,])
+# [1] 1504
+
+nrow(PA[PA$Total>4,])
+# [1] 5837
+
+nrow(PA[PA$Total>3,])
+# [1] 9492
+
+nrow(PA[PA$Total>2,])
+# [1] 13380
+
+nrow(PA[PA$Total>1,])
+# [1] 11994
+
+nrow(PA[PA$Total>0,])
+# [1] 20716
+
+write.csv(PA, file = "PA_7sp.csv")
+```
+
+#### Session info
+```{r, eval=FALSE}
+sessionInfo()
+# R version 4.2.0 (2022-04-22)
+# Platform: x86_64-apple-darwin17.0 (64-bit)
+# Running under: macOS Catalina 10.15.7
+# 
+# Matrix products: default
+# BLAS:   /System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/vecLib.framework/Versions/A/libBLAS.dylib
+# LAPACK: /Library/Frameworks/R.framework/Versions/4.2/Resources/lib/libRlapack.dylib
+# 
+# locale:
+#   [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+# 
+# attached base packages:
+#   [1] stats     graphics  grDevices utils     datasets  methods   base     
+# 
+# other attached packages:
+#   [1] lubridate_1.9.3 forcats_1.0.0   stringr_1.5.0   dplyr_1.1.3    
+# [5] purrr_1.0.2     readr_2.1.4     tidyr_1.3.0     tibble_3.2.1   
+# [9] ggplot2_3.4.4   tidyverse_2.0.0
+# 
+# loaded via a namespace (and not attached):
+#   [1] pillar_1.9.0      compiler_4.2.0    tools_4.2.0       digest_0.6.33    
+# [5] timechange_0.2.0  evaluate_0.23     lifecycle_1.0.3   gtable_0.3.4     
+# [9] pkgconfig_2.0.3   rlang_1.1.2       cli_3.6.1         rstudioapi_0.15.0
+# [13] yaml_2.3.7        xfun_0.34         fastmap_1.1.1     withr_2.5.0      
+# [17] knitr_1.40        generics_0.1.3    vctrs_0.6.4       hms_1.1.3        
+# [21] grid_4.2.0        tidyselect_1.2.0  glue_1.6.2        R6_2.5.1         
+# [25] fansi_1.0.5       rmarkdown_2.25    tzdb_0.4.0        magrittr_2.0.3   
+# [29] scales_1.2.1      htmltools_0.5.7   colorspace_2.1-0  utf8_1.2.2       
+# [33] stringi_1.7.12    munsell_0.5.0 
+```
+
+## Tximport 
+
+Using (tximport)[https://bioconductor.org/packages/release/bioc/html/tximport.html], expressed counts from the salmon quant files were imported into R by their annotated uniprot scores (1•e-6). Each species has to be imported individually as they all have seperate transcriptomes that were annotated. 
+
+### Cnat
+Cnat annotated uniprot IDs are imported using tximport. A total of 11,403 contigs annotated at 1.0·e-6 were expressed in the Cnat species in these two studies. 
+```{r, eval=FALSE}
+setwd("~/Documents/Documents/UTA/RESEARCH/coral_classification/cnat/salmon/host/")
+library(tximportData)
+library(tximport)
+library(readr)
+library(dplyr)
+
+# Import files 
+Cnat_samples <- read.table("sampleInfo_cnat.csv", header = TRUE)
+Cnat_samples
+Cnat_files <- file.path(Cnat_samples$sample, "quant.sf")
+names(Cnat_files) <- paste0("sample", 1:19)
+all(file.exists(Cnat_files))
+Cnat_tx2gene <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations/cnat_txt2gene.csv")
+Cnat_tx2gene <- Cnat_tx2gene[,c(2,3)]
+head(Cnat_tx2gene)
+Cnat_txi <- tximport(Cnat_files, type = 'salmon',tx2gene=Cnat_tx2gene)
+# reading in files with read_tsv
+# 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 
+# transcripts missing from tx2gene: 21369
+# summarizing abundance
+# summarizing counts
+# summarizing length
+names(Cnat_txi)
+tail(Cnat_txi$counts)
+write.csv(Cnat_txi, file = "Cnat_counts.csv") # manually add Entry for row names in excel 
+
+# Step 1: Filter for significant gene annotations 
+quants <- read.csv("Cnat_counts.csv") 
+head(quants)
+tail(quants)
+# 11,403 entry IDs
+annot <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations/annotated_cnat_ref_transcriptome.csv")
+names(annot)
+head(annot)
+tail(annot)
+# 51,141 contigs
+master <- merge(quants,annot,by="Entry")
+tail(master)
+# 33,812 contigs
+#The merge function will sometimes create duplicates. Remove these duplicates and only keep annotations with a sufficient evalue (<1e-5).
+master <- master[order(master$Entry, abs(master$Evalue) ), ] ### sort first
+master
+# 33,812 contigs
+master <- master[ !duplicated(master$Entry), ]  ### Keep lowest evalue
+# 11,403 contigs
+write.csv(master, file="master_no_filtering.csv")
+master <- master %>% filter(Evalue < 0.000001)
+# 11,403 contigs
+write.csv(master, file="master_evalue_filtered.csv")
+```
+
+### Mcav
+Mcav annotated uniprot IDs are imported using tximport. A total of 9,906 contigs annotated at 1.0·e-6 were expressed in the Mcav species in these two studies.
+```{r, eval=FALSE}
+setwd("~/Documents/Documents/UTA/RESEARCH/coral_classification/mcav/salmon/host/")
+library(tximportData)
+library(tximport)
+library(readr)
+library(dplyr)
+ 
+Mcav_samples <- read.table("sampleInfo_mcav.csv", header = TRUE)
+Mcav_samples
+Mcav_files <- file.path(Mcav_samples$sample, "quant.sf")
+names(Mcav_files) <- paste0("sample", 1:23)
+all(file.exists(Mcav_files))
+Mcav_tx2gene <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations/mcav_txt2gene.csv")
+Mcav_tx2gene <- Mcav_tx2gene[,c(2,3)]
+head(Mcav_tx2gene)
+Mcav_txi <- tximport(Mcav_files, type = 'salmon',tx2gene=Mcav_tx2gene)
+# reading in files with read_tsv
+# 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 
+# transcripts missing from tx2gene: 16157
+# summarizing abundance
+# summarizing counts
+# summarizing length
+names(Mcav_txi)
+tail(Mcav_txi$counts)
+write.csv(Mcav_txi, file = "Mcav_counts.csv") # manually add Entry for row names in excel 
+
+# Step 1: Filter for significant gene annotations 
+quants <- read.csv("Mcav_counts.csv") 
+head(quants)
+tail(quants)
+# 9,906 entry IDs
+annot <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations/annotated_mcav_ref_transcriptome.csv")
+names(annot)
+head(annot)
+tail(annot)
+# 44,639 contigs
+master <- merge(quants,annot,by="Entry")
+tail(master)
+# 31,813 contigs
+#The merge function will sometimes create duplicates. Remove these duplicates and only keep annotations with a sufficient evalue (<1e-5).
+master <- master[order(master$Entry, abs(master$Evalue) ), ] ### sort first
+master
+# 31,813 contigs
+master <- master[ !duplicated(master$Entry), ]  ### Keep lowest evalue
+# 9,906 contigs
+write.csv(master, file="master_no_filtering.csv")
+master <- master %>% filter(Evalue < 0.00001)
+# 9,906 contigs
+write.csv(master, file="master_evalue_filtered.csv")
+```
+
+### Oann
+
+Oann annotated uniprot IDs are imported using tximport. A total of ### contigs annotated at 1.0·e-6 were expressed in the Oann species in these two studies.
+
+```{r, eval=FALSE}
+# set up working directory
+
+setwd("~/Documents/Documents/UTA/RESEARCH/coral_classification/oann/salmon/host/")
+library(tximportData)
+library(tximport)
+library(readr)
+library(dplyr)
+ 
+oann_samples <- read.table("sampleInfo_oann.csv", header = TRUE)
+oann_samples
+oann_files <- file.path(oann_samples$sample, "quant.sf")
+names(oann_files) <- paste0("sample", 1:19)
+all(file.exists(oann_files))
+oann_tx2gene <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations/oann_txt2gene.csv")
+oann_tx2gene <- oann_tx2gene[,c(2,3)]
+head(oann_tx2gene)
+oann_txi <- tximport(oann_files, type = 'salmon',tx2gene=oann_tx2gene)
+# reading in files with read_tsv
+# 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 
+# transcripts missing from tx2gene: 26884
+# summarizing abundance
+# summarizing counts
+# summarizing length
+names(oann_txi)
+tail(oann_txi$counts)
+write.csv(oann_txi, file = "oann_counts.csv") # manually add Entry for row names in excel 
+
+# Step 1: Filter for significant gene annotations 
+quants <- read.csv("oann_counts.csv") 
+head(quants)
+tail(quants)
+# 12,841 entry IDs
+annot <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations/annotated_oann_ref_transcriptome.csv")
+names(annot)
+head(annot)
+tail(annot)
+# 70,264 contigs
+master <- merge(quants,annot,by="Entry")
+tail(master)
+# 48,989 contigs
+#The merge function will sometimes create duplicates. Remove these duplicates and only keep annotations with a sufficient evalue (<1e-5).
+master <- master[order(master$Entry, abs(master$Evalue) ), ] ### sort first
+master
+# 48,989 contigs
+master <- master[ !duplicated(master$Entry), ]  ### Keep lowest evalue
+# 12,841 contigs
+write.csv(master, file="master_no_filtering.csv")
+master <- master %>% filter(Evalue < 0.00001)
+# 12,841 contigs
+write.csv(master, file="master_evalue_filtered.csv")
+```
+
+### Ofav
+```{r, eval=FALSE}
+library(tximportData)
+library(tximport)
+library(readr)
+library(dplyr)
+
+ofav_samples <- read.table("sampleInfo_ofav.csv", header = TRUE)
+ofav_samples
+ofav_files <- file.path(ofav_samples$sample, "quant.sf")
+names(ofav_files) <- paste0("sample", 1:9)
+all(file.exists(ofav_files))
+ofav_tx2gene <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations/ofav_txt2gene.csv")
+ofav_tx2gene <- ofav_tx2gene[,c(2,3)]
+head(ofav_tx2gene)
+ofav_txi <- tximport(ofav_files, type = 'salmon',tx2gene=ofav_tx2gene)
+# reading in files with read_tsv
+# 1 2 3 4 5 6 7 8 9 
+# transcripts missing from tx2gene: 28039
+# summarizing abundance
+# summarizing counts
+# summarizing length
+names(ofav_txi)
+tail(ofav_txi$counts)
+write.csv(ofav_txi, file = "ofav_counts.csv") # manually add Entry for row names in excel 
+
+# Step 1: Filter for significant gene annotations 
+quants <- read.csv("ofav_counts.csv") 
+head(quants)
+tail(quants)
+# 13,071  entry IDs
+annot <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations/annotated_ofav_ref_transcriptome.csv")
+names(annot)
+head(annot)
+tail(annot)
+# 76,460 contigs
+master <- merge(quants,annot,by="Entry")
+tail(master)
+# 54,681 contigs
+#The merge function will sometimes create duplicates. Remove these duplicates and only keep annotations with a sufficient evalue (<1e-5).
+master <- master[order(master$Entry, abs(master$Evalue) ), ] ### sort first
+master
+# 54,681 contigs
+master <- master[ !duplicated(master$Entry), ]  ### Keep lowest evalue
+# 13,071 contigs
+write.csv(master, file="master_no_filtering.csv")
+master <- master %>% filter(Evalue < 0.00001)
+# 13,071 contigs
+write.csv(master, file="master_evalue_filtered.csv")
+```
+
+### Past
+```{r, eval=FALSE}
+setwd("~/Documents/Documents/UTA/RESEARCH/coral_classification/past/salmon/host/")
+library(tximportData)
+library(tximport)
+library(readr)
+library(dplyr)
+
+Past_samples <- read.table("sampleInfo_past.csv", header = TRUE)
+Past_samples
+Past_files <- file.path(Past_samples$sample, "quant.sf")
+names(Past_files) <- paste0("sample", 1:17)
+all(file.exists(Past_files))
+Past_tx2gene <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations/past_txt2gene.csv")
+Past_tx2gene <- Past_tx2gene[,c(2,3)]
+head(Past_tx2gene)
+Past_txi <- tximport(Past_files, type = 'salmon',tx2gene=Past_tx2gene)
+# reading in files with read_tsv
+# 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 
+# transcripts missing from tx2gene: 49439
+# summarizing abundance
+# summarizing counts
+# summarizing length
+names(Past_txi)
+tail(Past_txi$counts)
+write.csv(Past_txi, file = "Past_counts.csv") # manually add Entry for row names in excel 
+
+# Step 1: Filter for significant gene annotations 
+quants <- read.csv("Past_counts.csv") 
+head(quants)
+tail(quants)
+# 12,549 entry IDs
+annot <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations/annotated_past_gene_model.csv")
+names(annot)
+head(annot)
+tail(annot)
+# 114,444 contigs
+master <- merge(quants,annot,by="Entry")
+tail(master)
+# 69,757 contigs
+#The merge function will sometimes create duplicates. Remove these duplicates and only keep annotations with a sufficient evalue (<1e-5).
+master <- master[order(master$Entry, abs(master$Evalue) ), ] ### sort first
+master
+# 69,757 contigs
+master <- master[ !duplicated(master$Entry), ]  ### Keep lowest evalue
+# 12,549 contigs
+write.csv(master, file="master_no_filtering.csv")
+master <- master %>% filter(Evalue < 0.00001)
+# 12,988 contigs
+write.csv(master, file="master_evalue_filtered.csv")
+```
+
+### Pstr
+```{r, eval=FALSE}
+setwd("~/Documents/Documents/UTA/RESEARCH/coral_classification/pstr/salmon/host/")
+library(tximportData)
+library(tximport)
+library(readr)
+library(dplyr)
+
+pstr_samples <- read.table("sampleInfo_pstr.csv", header = TRUE)
+pstr_samples
+pstr_files <- file.path(pstr_samples$sample, "quant.sf")
+names(pstr_files) <- paste0("sample", 1:7)
+all(file.exists(pstr_files))
+pstr_tx2gene <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations/pstrig_txt2gene.csv")
+pstr_tx2gene <- pstr_tx2gene[,c(2,3)]
+head(pstr_tx2gene)
+pstr_txi <- tximport(pstr_files, type = 'salmon',tx2gene=pstr_tx2gene)
+# reading in files with read_tsv
+# 1 2 3 4 5 6 7 
+# transcripts missing from tx2gene: 13532
+# summarizing abundance
+# summarizing counts
+# summarizing length
+names(pstr_txi)
+tail(pstr_txi$counts)
+write.csv(pstr_txi, file = "pstr_counts.csv") # manually add Entry for row names in excel 
+
+# Step 1: Filter for significant gene annotations 
+quants <- read.csv("pstr_counts.csv") 
+head(quants)
+tail(quants)
+# 9,584 entry IDs
+annot <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations/annotated_pstr_ref_transcriptome.csv")
+names(annot)
+head(annot)
+tail(annot)
+# 31,838 contigs
+master <- merge(quants,annot,by="Entry")
+tail(master)
+# 21,579 contigs
+#The merge function will sometimes create duplicates. Remove these duplicates and only keep annotations with a sufficient evalue (<1e-5).
+master <- master[order(master$Entry, abs(master$E.value) ), ] ### sort first
+master
+# 21,579 contigs
+master <- master[ !duplicated(master$Entry), ]  ### Keep lowest evalue
+# 9,584 contigs
+write.csv(master, file="master_no_filtering.csv")
+master <- master %>% filter(E.value < 0.00001)
+# 9,584 contigs
+write.csv(master, file="master_evalue_filtered.csv")
+```
+
+### Ssid
+```{r, eval=FALSE}
+# set up working directory 
+
+setwd("~/Documents/Documents/UTA/RESEARCH/coral_classification/ssid/salmon/host/")
+library(tximportData)
+library(tximport)
+library(readr)
+library(dplyr)
+
+ssid_samples <- read.table("sampleInfo_ssid.csv", header = TRUE)
+ssid_samples
+ssid_files <- file.path(ssid_samples$sample, "quant.sf")
+names(ssid_files) <- paste0("sample", 1:9)
+all(file.exists(ssid_files))
+ssid_tx2gene <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations/ssid_txt2gene.csv")
+ssid_tx2gene <- ssid_tx2gene[,c(2,3)]
+head(ssid_tx2gene)
+ssid_txi <- tximport(ssid_files, type = 'salmon',tx2gene=ssid_tx2gene)
+# reading in files with read_tsv
+# 1 2 3 4 5 6 7 8 9 
+# transcripts missing from tx2gene: 21062
+# summarizing abundance
+# summarizing counts
+# summarizing length
+names(ssid_txi)
+tail(ssid_txi$counts)
+write.csv(ssid_txi, file = "ssid_counts.csv") # manually add Entry for row names in excel 
+
+# Step 1: Filter for significant gene annotations 
+quants <- read.csv("ssid_counts.csv") 
+head(quants)
+tail(quants)
+# 12,433 entry IDs
+annot <- read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/transcriptomes/annotations/annotated_ssid_ref_transcriptome.csv")
+names(annot)
+head(annot)
+tail(annot)
+# 51,467 contigs
+master <- merge(quants,annot,by="Entry")
+tail(master)
+# 34,852  contigs
+#The merge function will sometimes create duplicates. Remove these duplicates and only keep annotations with a sufficient evalue (<1e-5).
+master <- master[order(master$Entry, abs(master$Evalue) ), ] ### sort first
+master
+# 34,852 contigs
+master <- master[ !duplicated(master$Entry), ]  ### Keep lowest evalue
+# 12,433 contigs
+write.csv(master, file="master_no_filtering.csv")
+master <- master %>% filter(Evalue < 0.00001)
+# 12,433 contigs
+write.csv(master, file="master_evalue_filtered.csv")
+```
+
+#### Session Info
+
+```{r,eval=FALSE}
+sessionInfo()
+# R version 4.2.0 (2022-04-22)
+# Platform: x86_64-apple-darwin17.0 (64-bit)
+# Running under: macOS Catalina 10.15.7
+# 
+# Matrix products: default
+# BLAS:   /System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/vecLib.framework/Versions/A/libBLAS.dylib
+# LAPACK: /Library/Frameworks/R.framework/Versions/4.2/Resources/lib/libRlapack.dylib
+# 
+# locale:
+#   [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+# 
+# attached base packages:
+#   [1] stats     graphics  grDevices utils     datasets  methods   base     
+# 
+# other attached packages:
+#   [1] tximport_1.24.0     tximportData_1.24.0 lubridate_1.9.3    
+# [4] forcats_1.0.0       stringr_1.5.0       dplyr_1.1.3        
+# [7] purrr_1.0.2         readr_2.1.4         tidyr_1.3.0        
+# [10] tibble_3.2.1        ggplot2_3.4.4       tidyverse_2.0.0    
+# 
+# loaded via a namespace (and not attached):
+#   [1] pillar_1.9.0      compiler_4.2.0    tools_4.2.0       bit_4.0.5        
+# [5] digest_0.6.33     jsonlite_1.8.7    timechange_0.2.0  evaluate_0.23    
+# [9] lifecycle_1.0.3   gtable_0.3.4      pkgconfig_2.0.3   rlang_1.1.2      
+# [13] cli_3.6.1         rstudioapi_0.15.0 parallel_4.2.0    yaml_2.3.7       
+# [17] xfun_0.34         fastmap_1.1.1     withr_2.5.0       knitr_1.40       
+# [21] generics_0.1.3    vctrs_0.6.4       hms_1.1.3         bit64_4.0.5      
+# [25] grid_4.2.0        tidyselect_1.2.0  glue_1.6.2        R6_2.5.1         
+# [29] fansi_1.0.5       vroom_1.6.4       rmarkdown_2.25    tzdb_0.4.0       
+# [33] magrittr_2.0.3    scales_1.2.1      htmltools_0.5.7   colorspace_2.1-0 
+# [37] utf8_1.2.2        stringi_1.7.12    munsell_0.5.0     crayon_1.5.2   
+```
+
+## Counts 
+
+A final count matrix of all lesion samples was created by merging lesion samples from each species across Uniprot IDs. All Uniprot IDs were kept, regardless of presence in individual transcriptomes. A total of 29,769 uniprot annotated genes expressed across the seven species. 
+```{r, eval=FALSE}
+# load packages 
+library(readr)
+library(tidyr)
+library(dplyr)
+library(ggrepel)
+library(PCAtools)
+library("ggalt")
+library(DESeq2)
+library(sva)
+
+# set working directory 
+setwd("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/counts/")
+
+# load counts 
+# Cnat
+cnat <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/cnat/salmon/host/cnat_raw_counts.csv"))
+colnames(cnat)
+cnat_SCTLD <- cnat[,c(1:11)]
+cnat_WP<- cnat[,c(1,12:20)]
+
+# Mcav
+mcav <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/mcav/salmon/host/mcav_raw_counts.csv"))
+colnames(mcav)
+mcav_SCTLD <- mcav[,c(1:14)]
+mcav_WP<- mcav[,c(1,15:24)]
+
+# Past
+past <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/past/salmon/host/past_raw_count.csv"))
+colnames(past)
+past_SCTLD <- past[,c(1:12)]
+past_WP<- past[,c(1,13:18)]
+
+# Oann
+oann <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/oann/salmon/host/oann_raw_counts.csv"))
+colnames(oann)
+oann_SCTLD <- oann[,c(1,10:20)]
+oann_WP <- oann[,c(1:9)]
+
+# Pstr
+pstrig_SCTLD <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/pstr/salmon/host/pstr_raw_counts.csv"))
+
+# Ofav
+ofav_WP <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/ofav/salmon/host/ofav_raw_counts.csv"))
+
+# Ssid
+ssid_WP <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/ssid/salmon/host/ssid_raw_counts.csv"))
+
+# Metadata 
+# metadata <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/counts/metadata_ALL.csv"))
+# metadata_diseased <- metadata %>% filter(metadata$Colony_status == c("Diseased"))
+# write.csv(metadata_diseased, file = "metadata_diseased.csv") 
+# metatadata_control <- metadata %>% filter(metadata$Colony_status == c("Healthy"))
+# write.csv(metadata_diseased, file = "metadata_control.csv") 
+
+metadata <- as.data.frame(read.csv("~/Documents/Documents/UTA/RESEARCH/coral_classification/disease_classification/counts/metadata_diseased.csv"))
+metadata_diseased <- metadata %>% filter(metadata$Training_Testing == c("Training"))
+metadata_diseased$Sample
+
+
+# Diseased Only  
+# files need to be slimmed down to entry and diseased count numbers only
+colnames(cnat_SCTLD)
+colnames(cnat_WP)
+cnat_SCTLD <- cnat_SCTLD[,c(1,7:11)] # all cnats got sick 
+cnat_WP <- cnat_WP[,c(1,3,6,8)] # all except UVI_080 got sick 
+colnames(mcav_SCTLD)
+colnames(mcav_WP) # no WPs get sick 
+mcav_SCTLD <- mcav_SCTLD[,c(1,8,10,13)] # d1,3,6 get sick 
+colnames(past_SCTLD)
+colnames(past_WP)
+past_SCTLD <- past_SCTLD[,c(1,6:8,11:12)]
+past_WP <- past_WP[,c(1,7)]
+colnames(oann_SCTLD)
+colnames(oann_WP)
+oann_SCTLD <- oann_SCTLD[, c(1,8:12)]
+oann_WP <- oann_WP[, c(1,3,5,7)]
+colnames(pstrig_SCTLD)
+pstrig_SCTLD <- pstrig_SCTLD[, c(1,8)]
+colnames(ofav_WP)
+ofav_WP <- ofav_WP[,c(1,3,4,6,8,10)]
+colnames(ssid_WP)
+ssid_WP <- ssid_WP[, c(1,4,8,10)]
+
+# files then can be merged together by entry ID 
+
+gene_counts <- merge(cnat_SCTLD,mcav_SCTLD, by="Entry", all=TRUE)
+gene_counts <- merge(gene_counts,oann_SCTLD, by="Entry", all=TRUE)
+gene_counts <- merge(gene_counts,past_SCTLD, by="Entry", all=TRUE)
+gene_counts <- merge(gene_counts,pstrig_SCTLD, by="Entry", all=TRUE)
+gene_counts <- merge(gene_counts,cnat_WP, by="Entry", all=TRUE)
+gene_counts <- merge(gene_counts,oann_WP, by="Entry", all=TRUE)
+gene_counts <- merge(gene_counts,ofav_WP, by="Entry", all=TRUE)
+gene_counts <- merge(gene_counts,past_WP, by="Entry", all=TRUE)
+gene_counts <- merge(gene_counts,ssid_WP, by="Entry", all=TRUE)
+rownames(gene_counts) <- gene_counts$Entry
+gene_counts[is.na(gene_counts)] = 0
+colnames(gene_counts[,c(2:35)]) == metadata_diseased$Sample
+
+# save file of gene counts mixed together 
+write.csv(gene_counts, file = "gene_counts_diseased_raw.csv")
+# 29,769 genes expressed 
+
+# shared counts 
+
+gene_counts <- merge(cnat_SCTLD,mcav_SCTLD, by="Entry", all=TRUE)
+gene_counts <- merge(gene_counts,oann_SCTLD, by="Entry", all=TRUE)
+gene_counts <- merge(gene_counts,past_SCTLD, by="Entry", all=TRUE)
+gene_counts <- merge(gene_counts,pstrig_SCTLD, by="Entry", all=TRUE)
+gene_counts <- merge(gene_counts,cnat_WP, by="Entry", all=TRUE)
+gene_counts <- merge(gene_counts,oann_WP, by="Entry", all=TRUE)
+gene_counts <- merge(gene_counts,ofav_WP, by="Entry", all=TRUE)
+gene_counts <- merge(gene_counts,past_WP, by="Entry", all=TRUE)
+gene_counts <- merge(gene_counts,ssid_WP, by="Entry", all=TRUE)
+rownames(gene_counts) <- gene_counts$Entry
+gene_counts_noNA <- na.omit(gene_counts)
+# 1163 genes shared 
+
+write.csv(gene_counts, file = "gene_counts_diseased_shared_raw.csv")
+```
+
+#### Session Info
+
+```{r, eval=FALSE}
+sessionInfo()
+# R version 4.2.0 (2022-04-22)
+# Platform: x86_64-apple-darwin17.0 (64-bit)
+# Running under: macOS Catalina 10.15.7
+# 
+# Matrix products: default
+# BLAS:   /System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/vecLib.framework/Versions/A/libBLAS.dylib
+# LAPACK: /Library/Frameworks/R.framework/Versions/4.2/Resources/lib/libRlapack.dylib
+# 
+# locale:
+#   [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+# 
+# attached base packages:
+#   [1] stats4    stats     graphics  grDevices utils     datasets  methods  
+# [8] base     
+# 
+# other attached packages:
+#   [1] sva_3.44.0                  BiocParallel_1.30.4        
+# [3] genefilter_1.78.0           mgcv_1.9-0                 
+# [5] nlme_3.1-163                DESeq2_1.36.0              
+# [7] SummarizedExperiment_1.26.1 Biobase_2.56.0             
+# [9] MatrixGenerics_1.8.1        matrixStats_1.0.0          
+# [11] GenomicRanges_1.48.0        GenomeInfoDb_1.32.4        
+# [13] IRanges_2.30.1              S4Vectors_0.34.0           
+# [15] BiocGenerics_0.42.0         ggalt_0.4.0                
+# [17] PCAtools_2.8.0              ggrepel_0.9.4              
+# [19] tximport_1.24.0             tximportData_1.24.0        
+# [21] lubridate_1.9.3             forcats_1.0.0              
+# [23] stringr_1.5.0               dplyr_1.1.3                
+# [25] purrr_1.0.2                 readr_2.1.4                
+# [27] tidyr_1.3.0                 tibble_3.2.1               
+# [29] ggplot2_3.4.4               tidyverse_2.0.0            
+# 
+# loaded via a namespace (and not attached):
+#   [1] colorspace_2.1-0          XVector_0.36.0           
+# [3] rstudioapi_0.15.0         bit64_4.0.5              
+# [5] AnnotationDbi_1.58.0      fansi_1.0.5              
+# [7] codetools_0.2-19          splines_4.2.0            
+# [9] sparseMatrixStats_1.8.0   extrafont_0.19           
+# [11] cachem_1.0.8              geneplotter_1.74.0       
+# [13] knitr_1.40                jsonlite_1.8.7           
+# [15] Rttf2pt1_1.3.12           annotate_1.74.0          
+# [17] png_0.1-8                 compiler_4.2.0           
+# [19] httr_1.4.7                dqrng_0.3.1              
+# [21] Matrix_1.5-1              fastmap_1.1.1            
+# [23] limma_3.52.4              cli_3.6.1                
+# [25] BiocSingular_1.12.0       htmltools_0.5.7          
+# [27] tools_4.2.0               rsvd_1.0.5               
+# [29] gtable_0.3.4              glue_1.6.2               
+# [31] GenomeInfoDbData_1.2.8    reshape2_1.4.4           
+# [33] maps_3.4.1.1              Rcpp_1.0.11              
+# [35] vctrs_0.6.4               Biostrings_2.64.1        
+# [37] extrafontdb_1.0           DelayedMatrixStats_1.18.2
+# [39] xfun_0.34                 beachmat_2.12.0          
+# [41] timechange_0.2.0          lifecycle_1.0.3          
+# [43] irlba_2.3.5.1             XML_3.99-0.12            
+# [45] edgeR_3.38.4              zlibbioc_1.42.0          
+# [47] MASS_7.3-60               scales_1.2.1             
+# [49] vroom_1.6.4               hms_1.1.3                
+# [51] parallel_4.2.0            proj4_1.0-13             
+# [53] RColorBrewer_1.1-3        yaml_2.3.7               
+# [55] memoise_2.0.1             stringi_1.7.12           
+# [57] RSQLite_2.2.18            ScaledMatrix_1.4.1       
+# [59] rlang_1.1.2               pkgconfig_2.0.3          
+# [61] bitops_1.0-7              evaluate_0.23            
+# [63] lattice_0.22-5            cowplot_1.1.1            
+# [65] bit_4.0.5                 tidyselect_1.2.0         
+# [67] plyr_1.8.9                magrittr_2.0.3           
+# [69] R6_2.5.1                  generics_0.1.3           
+# [71] DelayedArray_0.22.0       DBI_1.1.3                
+# [73] pillar_1.9.0              withr_2.5.0              
+# [75] survival_3.5-7            KEGGREST_1.36.3          
+# [77] RCurl_1.98-1.9            ash_1.0-15               
+# [79] crayon_1.5.2              KernSmooth_2.23-22       
+# [81] utf8_1.2.2                tzdb_0.4.0               
+# [83] rmarkdown_2.25            locfit_1.5-9.8           
+# [85] grid_4.2.0                blob_1.2.4               
+# [87] digest_0.6.33             xtable_1.8-4             
+# [89] munsell_0.5.0 
+```
