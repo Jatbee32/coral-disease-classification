@@ -1,5 +1,5 @@
 # Coral Transcriptome and Proteome Repository
-This folder contains the fasta files generated or used in this project to classify coral diseases based on gene expression. Below is Table 1 from the [DOI](https://www.researchsquare.com/article/rs-5005833/v1) with the necessary transcriptome metrics for coral species and algal endosymbionts.
+This folder contains the metrics for the transcriptomes used in this project to classify coral diseases based on gene expression. Below is Table 1 from the [DOI](https://www.researchsquare.com/article/rs-5005833/v1) with the necessary transcriptome metrics for coral species and algal endosymbionts. Fasta files generated from this project can be available upon request from Emily Van Buren at emilywvanburen@outlook.com
 
 ## Table 1: Transcriptome metrics for coral species and algal endosymbionts
 
